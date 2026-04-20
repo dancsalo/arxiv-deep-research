@@ -58,7 +58,11 @@ When the user invokes this skill (e.g. `/finish-work`, "ship it", "we're done", 
     ```
 - Use a HEREDOC for the body.
 
-## 7. Report back
+## 7. Return to main
+
+- `git checkout main`
+
+## 8. Report back
 
 - Print the PR URL so the user can click through.
 
