@@ -13,7 +13,9 @@ This project uses **Go**. Each example under `examples/` is its own Go module.
 |------|---------|
 | Build | `make build` |
 | Lint (vet) | `make lint` |
-| Run tests | `make test` |
+| Run all tests | `make test` |
+| Go tests only | `make test-go` |
+| Python tests only | `make test-python` |
 | All checks | `make check` |
 
 Always use `make` targets rather than running `go` commands directly.

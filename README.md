@@ -49,6 +49,49 @@ After the script completes, open the Langfuse UI at http://localhost:3000 and na
 - **Generations** for each Claude call (critique + synthesis) with token usage and cost
 - **Spans** for arXiv search, web searches, and page fetches
 
+## Testing
+
+### Run all tests
+
+```bash
+make test          # runs Go + Python tests
+make check         # runs lint + build + all tests
+```
+
+### Go tests
+
+```bash
+make test-go       # all Go modules (examples + src)
+```
+
+Go tests live alongside source files in the same package (standard Go convention). The `src/` module includes:
+
+| Package | Tests | What they cover |
+|---------|-------|-----------------|
+| `memoryclient` | 27 | Title validation, token estimation, emoji mapping, embed HTTP client, vector literal formatting, null string handling |
+| `tools` | 15 | Tool schema definitions, size estimator math, arg reduction logic |
+
+### Python tests
+
+```bash
+make test-python   # embedding service tests
+```
+
+Requires dependencies installed (`pip install -r services/embedding-api/requirements.txt`). The first run downloads the `all-MiniLM-L6-v2` model (~80MB).
+
+| Service | Tests | What they cover |
+|---------|-------|-----------------|
+| `embedding-api` | 11 | Single/batch embedding, normalization, input validation (empty, >100, truncation), health endpoint, determinism |
+
+### Integration tests (future)
+
+Integration tests requiring Docker (Postgres + pgvector + embedding service) will use the `//go:build integration` build tag:
+
+```bash
+docker compose -f docker-compose.langfuse.yml up -d langfuse-db embedding-api
+cd src && go test ./... -tags integration -count=1
+```
+
 ### Tear down
 
 ```bash
