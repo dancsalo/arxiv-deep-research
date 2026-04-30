@@ -1,7 +1,8 @@
 .PHONY: build vet lint test check
 
 GO_EXAMPLES := $(wildcard examples/*/main.go)
-GO_DIRS := $(dir $(GO_EXAMPLES))
+GO_SRC := $(wildcard src/main.go)
+GO_DIRS := $(dir $(GO_EXAMPLES)) $(dir $(GO_SRC))
 
 build:
 	@for d in $(GO_DIRS); do echo "==> build $$d"; (cd $$d && go build ./...); done
