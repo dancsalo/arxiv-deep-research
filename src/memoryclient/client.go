@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -37,7 +38,7 @@ func New(cfg Config) (*Client, error) {
 	return &Client{
 		db:         db,
 		embedURL:   cfg.EmbedURL,
-		httpClient: &http.Client{},
+		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}, nil
 }
 
