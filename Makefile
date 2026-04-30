@@ -1,15 +1,17 @@
-.PHONY: install test lint typecheck check
+.PHONY: build vet lint test check
 
-install:
-	uv sync --all-extras
+GO_EXAMPLES := $(wildcard examples/*/main.go)
+GO_DIRS := $(dir $(GO_EXAMPLES))
+
+build:
+	@for d in $(GO_DIRS); do echo "==> build $$d"; (cd $$d && go build ./...); done
+
+vet:
+	@for d in $(GO_DIRS); do echo "==> vet $$d"; (cd $$d && go vet ./...); done
+
+lint: vet
 
 test:
-	uv run pytest
+	@for d in $(GO_DIRS); do echo "==> test $$d"; (cd $$d && go test ./...); done
 
-lint:
-	uv run ruff check .
-
-typecheck:
-	uv run pyright
-
-check: lint typecheck test
+check: lint build test
