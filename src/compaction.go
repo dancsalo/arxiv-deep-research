@@ -11,6 +11,7 @@ import (
 )
 
 const maxCompactionInputTokens = 50_000
+const maxSummarizeDepth = 3
 
 type CompactionClient interface {
 	CreateMessage(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error)
@@ -26,41 +27,33 @@ func (m *ContextManager) CompactTurn(ctx context.Context, turnIdx int) error {
 	}
 
 	nextLevel := turn.CompactionLevel + 1
+	content := m.extractTurnText(*turn)
 
+	var text string
 	switch nextLevel {
 	case 1:
-		content := m.extractTurnText(*turn)
-		truncated := extractiveTruncate(content, turn.EstimatedTokens/2)
-		m.log.turns[turnIdx].Assistant = anthropic.NewAssistantMessage(anthropic.NewTextBlock(truncated))
-		m.log.turns[turnIdx].ToolResults = nil
-		m.log.turns[turnIdx].EstimatedTokens = m.estimator.EstimateFast(truncated, ContentProse)
-		m.log.turns[turnIdx].CompactionLevel = 1
-		m.log.turns[turnIdx].Compacted = true
-
+		text = extractiveTruncate(content, turn.EstimatedTokens/2)
 	case 2:
-		content := m.extractTurnText(*turn)
-		summary, err := m.summarize(ctx, content, nextLevel)
+		summary, err := m.summarize(ctx, content, nextLevel, 0)
 		if err != nil {
 			return fmt.Errorf("compaction failed for turn %d: %w", turnIdx, err)
 		}
-		m.log.turns[turnIdx].Assistant = anthropic.NewAssistantMessage(anthropic.NewTextBlock(summary))
-		m.log.turns[turnIdx].ToolResults = nil
-		m.log.turns[turnIdx].EstimatedTokens = m.estimator.EstimateFast(summary, ContentProse)
-		m.log.turns[turnIdx].CompactionLevel = 2
-		m.log.turns[turnIdx].Compacted = true
-
+		text = summary
 	case 3:
-		content := m.extractTurnText(*turn)
-		tombstone := buildTombstone(turnIdx, content)
-		m.log.turns[turnIdx].Assistant = anthropic.NewAssistantMessage(anthropic.NewTextBlock(tombstone))
-		m.log.turns[turnIdx].ToolResults = nil
-		m.log.turns[turnIdx].EstimatedTokens = m.estimator.EstimateFast(tombstone, ContentProse)
-		m.log.turns[turnIdx].CompactionLevel = 3
-		m.log.turns[turnIdx].Compacted = true
+		text = buildTombstone(turnIdx, content)
 	}
 
+	m.applyCompaction(turnIdx, nextLevel, text)
 	m.cached.dirty = true
 	return nil
+}
+
+func (m *ContextManager) applyCompaction(turnIdx, level int, text string) {
+	m.log.turns[turnIdx].Assistant = anthropic.NewAssistantMessage(anthropic.NewTextBlock(text))
+	m.log.turns[turnIdx].ToolResults = nil
+	m.log.turns[turnIdx].EstimatedTokens = m.estimator.EstimateFast(text, ContentProse)
+	m.log.turns[turnIdx].CompactionLevel = level
+	m.log.turns[turnIdx].Compacted = true
 }
 
 func (m *ContextManager) CompactConversationHistory(ctx context.Context) error {
@@ -82,7 +75,7 @@ func (m *ContextManager) CompactConversationHistory(ctx context.Context) error {
 	}
 
 	oldContent := m.extractMultiTurnText(compactable)
-	summary, err := m.summarize(ctx, oldContent, 2)
+	summary, err := m.summarize(ctx, oldContent, 2, 0)
 	if err != nil {
 		return fmt.Errorf("conversation compaction failed: %w", err)
 	}
@@ -98,7 +91,11 @@ func (m *ContextManager) CompactConversationHistory(ctx context.Context) error {
 
 	recent := make([]Turn, keepCount)
 	copy(recent, m.log.turns[m.log.Len()-keepCount:])
+
 	m.log.turns = append([]Turn{summaryTurn}, recent...)
+	for i := range m.log.turns {
+		m.log.turns[i].Index = i
+	}
 	m.cached.dirty = true
 	return nil
 }
@@ -106,6 +103,7 @@ func (m *ContextManager) CompactConversationHistory(ctx context.Context) error {
 func (m *ContextManager) autoCompact(ctx context.Context, tokensNeeded int) ([]int, error) {
 	freed := 0
 	var compactedIdxs []int
+	var firstErr error
 
 	candidates := m.compactionCandidates()
 
@@ -121,6 +119,9 @@ func (m *ContextManager) autoCompact(ctx context.Context, tokensNeeded int) ([]i
 		beforeTokens := turn.EstimatedTokens
 		err := m.CompactTurn(ctx, idx)
 		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
 			continue
 		}
 
@@ -129,16 +130,20 @@ func (m *ContextManager) autoCompact(ctx context.Context, tokensNeeded int) ([]i
 	}
 
 	if freed < tokensNeeded {
-		return compactedIdxs, fmt.Errorf(
-			"could only free %d of %d tokens needed (%d turns compacted)",
-			freed, tokensNeeded, len(compactedIdxs),
-		)
+		msg := fmt.Sprintf("could only free %d of %d tokens needed (%d turns compacted)",
+			freed, tokensNeeded, len(compactedIdxs))
+		if firstErr != nil {
+			msg += fmt.Sprintf("; first compaction error: %v", firstErr)
+		}
+		return compactedIdxs, fmt.Errorf("%s", msg)
 	}
 
 	m.cached.dirty = true
 	return compactedIdxs, nil
 }
 
+// compactionCandidates returns turn indices sorted for compaction:
+// lowest-importance first (highest TurnPriority number), then oldest first.
 func (m *ContextManager) compactionCandidates() []int {
 	type candidate struct {
 		index    int
@@ -153,6 +158,7 @@ func (m *ContextManager) compactionCandidates() []int {
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].priority != candidates[j].priority {
+			// Higher numeric priority = lower importance = compact first
 			return candidates[i].priority > candidates[j].priority
 		}
 		return candidates[i].index < candidates[j].index
@@ -168,14 +174,17 @@ func (m *ContextManager) SetCompactionClient(client CompactionClient) {
 	m.compactionClient = client
 }
 
-func (m *ContextManager) summarize(ctx context.Context, content string, level int) (string, error) {
+func (m *ContextManager) summarize(ctx context.Context, content string, level int, depth int) (string, error) {
 	if m.compactionClient == nil {
 		return extractiveTruncate(content, maxCompactionInputTokens/2), nil
 	}
 
 	contentTokens := m.estimator.EstimateFast(content, ContentMixed)
 	if contentTokens > maxCompactionInputTokens {
-		return m.summarizeChunked(ctx, content, level)
+		if depth >= maxSummarizeDepth {
+			return extractiveTruncate(content, maxCompactionInputTokens/2), nil
+		}
+		return m.summarizeChunked(ctx, content, level, depth)
 	}
 
 	targetChars := utf8.RuneCountInString(content) / (2 * (level + 1))
@@ -206,7 +215,7 @@ func (m *ContextManager) summarize(ctx context.Context, content string, level in
 	return "", fmt.Errorf("summarization returned no text")
 }
 
-func (m *ContextManager) summarizeChunked(ctx context.Context, content string, level int) (string, error) {
+func (m *ContextManager) summarizeChunked(ctx context.Context, content string, level int, depth int) (string, error) {
 	chunkSize := int(float64(maxCompactionInputTokens) * 3.5)
 	runes := []rune(content)
 	var summaries []string
@@ -215,7 +224,7 @@ func (m *ContextManager) summarizeChunked(ctx context.Context, content string, l
 		if end > len(runes) {
 			end = len(runes)
 		}
-		s, err := m.summarize(ctx, string(runes[i:end]), level)
+		s, err := m.summarize(ctx, string(runes[i:end]), level, depth+1)
 		if err != nil {
 			return "", err
 		}
@@ -223,7 +232,7 @@ func (m *ContextManager) summarizeChunked(ctx context.Context, content string, l
 	}
 	if len(summaries) > 1 {
 		combined := strings.Join(summaries, "\n\n")
-		return m.summarize(ctx, combined, level)
+		return m.summarize(ctx, combined, level, depth+1)
 	}
 	return summaries[0], nil
 }
