@@ -32,24 +32,29 @@ This project uses a two-phase workflow: **planning** then **coding**. Each phase
 
 ### Phase 1: Planning
 
-Iterate until the plan is solid, then commit it.
+Iterate until the plan is solid, then commit it. Use **plan-all** to run the full pipeline autonomously, or invoke each step manually.
 
 ```
-plan-begin → plan-critique → plan-tests → (loop until satisfied) → plan-finish
+plan-begin → [ plan-critique + plan-critique-pm ] → plan-revise → (× 2 rounds) → plan-tests → plan-finish
 ```
 
 1. **plan-begin** — write an implementation plan with requirements, specs, and contracts. Saved to `.claude/plans/`.
-2. **plan-critique** — grumpy staff-engineer review of the plan. Questions feasibility, completeness, and coherence.
-3. **plan-tests** — generate a test plan from the implementation plan (what to test, inputs/outputs, verification strategy).
-4. Repeat steps 2-3 until the plan and test plan are solid.
-5. **plan-finish** — commit the plan to git, push to a feature branch, and open a PR for review.
+2. **Dual critique** (run as parallel subagents):
+   - **plan-critique** — grumpy staff-engineer review. Questions feasibility, completeness, and coherence.
+   - **plan-critique-pm** — product manager review. Questions user value, scope, and priorities.
+3. **plan-revise** — address feedback from both critiques: fix gaps, correct errors, resolve scope and design issues.
+4. Repeat steps 2-3 for a second round.
+5. **plan-tests** — generate a test plan from the implementation plan (what to test, inputs/outputs, verification strategy).
+6. **plan-finish** — commit the plan to git, push to a feature branch, and open a PR for review.
+
+**plan-all** — orchestrates steps 1-6 end-to-end without stopping for user input.
 
 ### Phase 2: Coding
 
 Build from the plan, section by section, with verification at every step.
 
 ```
-code-checklist → [ code-tests → code-verify → code-checkpoint ] × N → code-critique → code-verify → (loop until clean) → code-finish
+code-checklist → [ code-tests → code-verify → code-checkpoint ] × N → code-critique → code-revise → code-verify → (loop until clean) → code-finish
 ```
 
 1. **code-checklist** — convert the plan into an ordered implementation checklist. Then for each section:
@@ -58,6 +63,7 @@ code-checklist → [ code-tests → code-verify → code-checkpoint ] × N → c
    - **code-checkpoint** — commit locally once the section passes.
 2. After all sections are implemented:
    - **code-critique** — grumpy staff-engineer code review.
+   - **code-revise** — apply critique fixes: triage items, make changes, flag tradeoffs for discussion.
    - **code-verify** — run full test suite again.
-   - Iterate on critique findings until clean.
+   - Iterate on critique/revise/verify until clean.
 3. **code-finish** — run all checks, push to a feature branch, and open a PR.
