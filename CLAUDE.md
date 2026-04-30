@@ -29,5 +29,23 @@ Always use `make` targets rather than running the underlying tools directly.
 ## Project structure
 
 - `example.py` — main research workflow script
-- `src/tools/` — reusable tool modules (e.g. `arxiv_search.py`)
 - `src/` — package root
+  - `tools/` — reusable tool modules (e.g. `arxiv_search.py`)
+  - `mcp_servers/` — MCP server implementations
+  - `skills/` — skill modules
+- `examples/` — standalone examples (Go-based tool use demos)
+- `data/` — local data (SQLite research memory DB)
+- `tests/` — pytest test suite
+- `.claude/plans/` — implementation plans (markdown)
+- `.claude/skills/` — Claude Code skill definitions
+
+## Workflow
+
+This project follows a plan → test → implement → critique → finish workflow:
+
+1. **Plan** — write an implementation plan before coding. Plans live in `.claude/plans/`.
+2. **Test** — write TDD tests from the plan before implementation.
+3. **Implement** — build against the failing tests.
+4. **Critique** — review the code or plan for structural issues, error handling, and second-order effects.
+5. **Checkpoint** — commit locally at meaningful progress points. Do not push.
+6. **Finish** — run checks, push to a feature branch, and open a PR.
