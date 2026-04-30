@@ -51,19 +51,19 @@ plan-begin → [ plan-critique + plan-critique-pm ] → plan-revise → (× 2 ro
 
 ### Phase 2: Coding
 
-Build from the plan, section by section, with verification at every step.
+Build from the plan, section by section, with verification at every step. Use **code-all** to run the full pipeline autonomously, or invoke each step manually.
 
 ```
-code-checklist → [ code-tests → code-verify → code-checkpoint ] × N → code-critique → code-revise → code-verify → (loop until clean) → code-finish
+code-checklist → [ code-implement → code-critique → code-revise (loop) → code-verify → code-revise (if failures) → code-checkpoint ] × N → code-finish
 ```
 
 1. **code-checklist** — convert the plan into an ordered implementation checklist. Then for each section:
-   - **code-tests** — write test code for that section from the test plan.
-   - **code-verify** — run lint, typecheck, and tests. Fix failures.
-   - **code-checkpoint** — commit locally once the section passes.
-2. After all sections are implemented:
-   - **code-critique** — grumpy staff-engineer code review.
-   - **code-revise** — apply critique fixes: triage items, make changes, flag tradeoffs for discussion.
-   - **code-verify** — run full test suite again.
-   - Iterate on critique/revise/verify until clean.
-3. **code-finish** — run all checks, push to a feature branch, and open a PR.
+   - **code-implement** — write production code for that checklist item following specs and contracts.
+   - **code-critique** — grumpy staff-engineer code review of the section.
+   - **code-revise** — apply critique fixes (loop with critique until approved, max 3 rounds).
+   - **code-verify** — run lint and tests. Fix failures.
+   - **code-revise** — if verification fails, fix and re-verify.
+   - **code-checkpoint** — commit locally once the section passes all checks.
+2. **code-finish** — run all checks, push to a feature branch, and open a PR.
+
+**code-all** — orchestrates step 1 end-to-end without stopping for user input.
