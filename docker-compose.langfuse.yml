@@ -1,6 +1,6 @@
 services:
   langfuse-db:
-    image: postgres:15
+    image: pgvector/pgvector:pg15
     restart: unless-stopped
     environment:
       POSTGRES_USER: langfuse
@@ -94,6 +94,22 @@ services:
       LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
       LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       REDIS_CONNECTION_STRING: redis://langfuse-redis:6379
+
+  embedding-api:
+    build:
+      context: ./services/embedding-api
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
 volumes:
   langfuse-db-data:
