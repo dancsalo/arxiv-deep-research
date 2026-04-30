@@ -1,7 +1,7 @@
 .PHONY: build vet lint test test-go test-python check
 
 GO_EXAMPLES := $(wildcard examples/*/main.go)
-GO_SRC := $(wildcard src/main.go)
+GO_SRC := $(wildcard src/go.mod)
 GO_DIRS := $(dir $(GO_EXAMPLES)) $(dir $(GO_SRC))
 
 PYTHON_TEST_DIRS := services/embedding-api

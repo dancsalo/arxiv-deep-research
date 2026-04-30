@@ -46,4 +46,3 @@ htmlcov/
 # Go binaries
 examples/*/basic-tool-use
 examples/*/parallel-tool-use
-src/memory-store
