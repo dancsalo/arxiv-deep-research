@@ -100,7 +100,7 @@ services:
       context: ./services/embedding-api
     restart: unless-stopped
     ports:
-      - "8100:8100"
+      - "127.0.0.1:8100:8100"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/health')"]
       interval: 10s

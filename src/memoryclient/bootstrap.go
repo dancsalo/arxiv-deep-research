@@ -25,7 +25,13 @@ func EnsureDatabase(defaultDSN, memoriesDSN string) (*sql.DB, error) {
 	}
 	if !exists {
 		if _, err := admin.Exec("CREATE DATABASE memories"); err != nil {
-			return nil, fmt.Errorf("create memories db: %w", err)
+			// Handle race: another process may have created it between our check and create.
+			var exists2 bool
+			if checkErr := admin.QueryRow("SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = 'memories')").Scan(&exists2); checkErr == nil && exists2 {
+				// Database was created by another process — safe to proceed.
+			} else {
+				return nil, fmt.Errorf("create memories db: %w", err)
+			}
 		}
 	}
 

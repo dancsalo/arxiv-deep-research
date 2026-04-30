@@ -56,7 +56,9 @@ func ReduceToolArgs(toolName string, args map[string]any) (map[string]any, bool)
 		return reduced, true
 	case "get_memory_details":
 		if ids, ok := args["ids"].([]any); ok && len(ids) > 3 {
-			reduced["ids"] = ids[:3]
+			cp := make([]any, 3)
+			copy(cp, ids[:3])
+			reduced["ids"] = cp
 			return reduced, true
 		}
 	}
