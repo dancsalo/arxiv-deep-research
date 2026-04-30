@@ -16,14 +16,16 @@ type CachedCount struct {
 }
 
 type ContextManager struct {
-	estimator     *TokenEstimator
-	budget        *ContextBudget
-	log           *MessageLog
-	outputTracker *OutputTracker
-	cached        CachedCount
-	system        []anthropic.TextBlockParam
-	tools         []anthropic.MessageCountTokensToolUnionParam
-	nowFunc       func() time.Time
+	estimator        *TokenEstimator
+	budget           *ContextBudget
+	log              *MessageLog
+	outputTracker    *OutputTracker
+	cached           CachedCount
+	system           []anthropic.TextBlockParam
+	tools            []anthropic.MessageCountTokensToolUnionParam
+	nowFunc          func() time.Time
+	compactionClient CompactionClient
+	toolSizeEst      *ToolSizeEstimator
 }
 
 type ContextManagerConfig struct {
