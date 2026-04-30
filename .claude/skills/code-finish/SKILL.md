@@ -1,12 +1,12 @@
 ---
-name: finish-work
+name: code-finish
 description: Run checks, commit, push to a feature branch, and open a GitHub PR.
 user_invocable: true
 ---
 
-# Finish Work
+# Code Finish
 
-When the user invokes this skill (e.g. `/finish-work`, "ship it", "we're done", "open a PR"), run the full sequence:
+When the user invokes this skill (e.g. `/code-finish`, "ship it", "we're done", "open a PR"), run the full sequence to get code changes into a PR.
 
 ## 1. Run checks
 
