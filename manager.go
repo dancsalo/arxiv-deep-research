@@ -184,6 +184,14 @@ func (m *ContextManager) extractMultiTurnText(turns []Turn) string {
 	return sb.String()
 }
 
+func (m *ContextManager) EstimateAllTokens() int {
+	return m.estimateAll()
+}
+
+func (m *ContextManager) EstimateText(text string, ct ContentType) int {
+	return m.estimator.EstimateFast(text, ct)
+}
+
 func (m *ContextManager) ExtractFinalAnswer() string {
 	if m.log.Len() == 0 {
 		return ""
