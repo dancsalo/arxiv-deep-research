@@ -2,9 +2,9 @@
 
 ## Language & tooling
 
-This project uses **Go**. Each example under `examples/` is its own Go module.
+This project uses **Go** as a single module (`github.com/dancsalo/arxiv-deep-research`).
 
-- Dependencies are managed per-module via `go.mod`
+- Dependencies are managed via the root `go.mod`
 - Do NOT use a global `GOPATH` workspace
 
 ## Verification commands
@@ -15,16 +15,20 @@ This project uses **Go**. Each example under `examples/` is its own Go module.
 | Lint (vet) | `make lint` |
 | Run all tests | `make test` |
 | Go tests only | `make test-go` |
+| Race detector | `make test-race` |
 | Python tests only | `make test-python` |
 | All checks | `make check` |
+| Run server | `make run-server` |
 
 Always use `make` targets rather than running `go` commands directly.
 
 ## Project structure
 
-- `examples/` — standalone Go examples (each is its own module)
-  - `01-basic-tool-use/` — single tool use with Claude API
-  - `02-parallel-tool-use/` — parallel tool use with Claude API
+- `cmd/server/` — HTTP server binary (agentic loop with SSE streaming)
+- `memoryclient/` — memory store client (search, store, bootstrap, migrations)
+- `server/` — HTTP server and SSE handler packages
+- `tools/` — tool definitions, size estimators, handlers
+- `services/embedding-api/` — Python embedding service
 - `.claude/plans/` — implementation plans (markdown)
 - `.claude/skills/` — Claude Code skill definitions
 
@@ -37,7 +41,7 @@ This project uses a two-phase workflow: **planning** then **coding**. Each phase
 Iterate until the plan is solid, then commit it. Use **plan-all** to run the full pipeline autonomously, or invoke each step manually.
 
 ```
-plan-begin → [ plan-critique + plan-critique-pm ] → plan-revise → (× 2 rounds) → plan-tests → plan-finish
+plan-begin -> [ plan-critique + plan-critique-pm ] -> plan-revise -> (x 2 rounds) -> plan-tests -> plan-finish
 ```
 
 1. **plan-begin** — write an implementation plan with requirements, specs, and contracts. Saved to `.claude/plans/`.
@@ -56,7 +60,7 @@ plan-begin → [ plan-critique + plan-critique-pm ] → plan-revise → (× 2 ro
 Build from the plan, section by section, with verification at every step. Use **code-all** to run the full pipeline autonomously, or invoke each step manually.
 
 ```
-code-checklist → [ code-implement → code-critique → code-revise (loop) → code-verify → code-revise (if failures) → code-checkpoint ] × N → code-finish
+code-checklist -> [ code-implement -> code-critique -> code-revise (loop) -> code-verify -> code-revise (if failures) -> code-checkpoint ] x N -> code-finish
 ```
 
 1. **code-checklist** — convert the plan into an ordered implementation checklist. Then for each section:

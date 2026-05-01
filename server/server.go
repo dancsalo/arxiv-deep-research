@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"sync"
 
-	contextmanager "memory-store"
+	contextmanager "github.com/dancsalo/arxiv-deep-research"
 )
 
 //go:embed static/index.html

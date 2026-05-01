@@ -13,8 +13,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
-	contextmanager "memory-store"
-	"memory-store/server"
+	contextmanager "github.com/dancsalo/arxiv-deep-research"
+	"github.com/dancsalo/arxiv-deep-research/server"
 )
 
 type sdkAdapter struct {

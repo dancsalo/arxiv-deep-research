@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"memory-store/memoryclient"
+	"github.com/dancsalo/arxiv-deep-research/memoryclient"
 )
 
 type ToolHandler func(input []byte) (string, error)

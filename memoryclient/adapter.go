@@ -3,7 +3,7 @@ package memoryclient
 import (
 	"context"
 
-	contextmanager "memory-store"
+	contextmanager "github.com/dancsalo/arxiv-deep-research"
 )
 
 type MemorySearcher interface {

@@ -15,7 +15,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	contextmanager "memory-store"
+	contextmanager "github.com/dancsalo/arxiv-deep-research"
 )
 
 type scriptedClient struct {
