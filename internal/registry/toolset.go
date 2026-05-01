@@ -1,4 +1,4 @@
-package contextmanager
+package registry
 
 type ToolSet interface {
 	Register(registry *ToolRegistry)

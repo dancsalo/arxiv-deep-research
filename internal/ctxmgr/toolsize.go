@@ -1,4 +1,4 @@
-package contextmanager
+package ctxmgr
 
 type RollingAvg struct {
 	values []int

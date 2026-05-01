@@ -13,7 +13,9 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
-	contextmanager "github.com/dancsalo/arxiv-deep-research"
+	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
+	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
+	"github.com/dancsalo/arxiv-deep-research/internal/registry"
 	"github.com/dancsalo/arxiv-deep-research/server"
 )
 
@@ -47,15 +49,15 @@ func main() {
 		modelID = anthropic.ModelClaudeHaiku4_5
 	}
 
-	factory := func(query string, logger *slog.Logger) (*contextmanager.AgenticLoop, error) {
+	factory := func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error) {
 		systemBlocks := []anthropic.TextBlockParam{
 			{Text: "You are a helpful research assistant.", Type: "text"},
 		}
 
 		initialMsg := anthropic.NewUserMessage(anthropic.NewTextBlock(query))
-		manager := contextmanager.NewContextManager(contextmanager.ContextManagerConfig{
-			Estimator: contextmanager.NewTokenEstimator(nil, "", false),
-			Budget: &contextmanager.ContextBudget{
+		manager := ctxmgr.NewContextManager(ctxmgr.ContextManagerConfig{
+			Estimator: ctxmgr.NewTokenEstimator(nil, "", false),
+			Budget: &ctxmgr.ContextBudget{
 				ModelContextLimit: 200000,
 				MaxOutputTokens:   8192,
 				SafetyMargin:      2000,
@@ -64,25 +66,25 @@ func main() {
 			NowFunc: time.Now,
 		}, initialMsg)
 
-		registry := contextmanager.NewToolRegistry()
+		reg := registry.NewToolRegistry()
 
-		registry.Register("finish", contextmanager.BuildFinishTool(),
+		reg.Register("finish", agentic.BuildFinishTool(),
 			func(_ context.Context, input json.RawMessage) (string, error) {
 				return string(input), nil
 			})
 
-		loop := contextmanager.NewAgenticLoop(
+		loop := agentic.NewAgenticLoop(
 			&sdkAdapter{client: &apiClient},
 			manager,
-			registry,
+			reg,
 			nil,
-			contextmanager.AgenticLoopConfig{
+			agentic.AgenticLoopConfig{
 				MaxTurns:        20,
 				MaxCostUSD:      0.50,
 				Model:           modelID,
 				SessionID:       fmt.Sprintf("web-%d", time.Now().UnixMilli()),
 				FinishTool:      "finish",
-				DefaultPriority: contextmanager.PriorityCore,
+				DefaultPriority: ctxmgr.PriorityCore,
 				Logger:          logger,
 			},
 			systemBlocks,

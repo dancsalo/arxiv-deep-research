@@ -1,4 +1,4 @@
-package contextmanager
+package agentic
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 )
 
 type LoopConfig struct {
@@ -32,7 +33,7 @@ func ResearchLoop(
 	tools []anthropic.ToolUnionParam,
 	system []anthropic.TextBlockParam,
 	executor ToolExecutor,
-	manager *ContextManager,
+	manager *ctxmgr.ContextManager,
 ) (string, error) {
 	var totalCostUSD float64
 	finished := false
@@ -132,7 +133,7 @@ func ResearchLoop(
 			msg := anthropic.NewUserMessage(toolResults...)
 			toolResultMsg = &msg
 		}
-		manager.AddTurn(assistantMsg, toolResultMsg, PriorityResearch)
+		manager.AddTurn(assistantMsg, toolResultMsg, ctxmgr.PriorityResearch)
 
 		if resp.StopReason == "end_turn" || finished {
 			break

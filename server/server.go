@@ -8,13 +8,13 @@ import (
 	"net/http"
 	"sync"
 
-	contextmanager "github.com/dancsalo/arxiv-deep-research"
+	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
 )
 
 //go:embed static/index.html
 var staticFS embed.FS
 
-type LoopFactory func(query string, logger *slog.Logger) (*contextmanager.AgenticLoop, error)
+type LoopFactory func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error)
 
 type Server struct {
 	factory LoopFactory

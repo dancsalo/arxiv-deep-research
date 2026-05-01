@@ -1,4 +1,4 @@
-package contextmanager
+package agentic
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 )
 
 func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
@@ -25,8 +26,8 @@ func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
 			return "", ctx.Err()
 		}
 
-		tokensUsed := a.manager.estimateAll()
-		tokensRemaining := a.manager.budget.Remaining(tokensUsed)
+		tokensUsed := a.manager.EstimateAllTokens()
+		tokensRemaining := a.manager.Budget().Remaining(tokensUsed)
 
 		state := TurnState{
 			TurnIndex:       a.turnIndex,
@@ -189,11 +190,12 @@ func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
 		a.manager.AddTurn(assistantMsg, toolResultMsg, a.cfg.DefaultPriority)
 
 		// Post-turn state for hooks
+		tokensUsed = a.manager.EstimateAllTokens()
 		postState := TurnState{
 			TurnIndex:         a.turnIndex,
 			TotalCostUSD:      a.totalCostUSD,
-			TokensUsed:        a.manager.estimateAll(),
-			TokensRemaining:   a.manager.budget.Remaining(a.manager.estimateAll()),
+			TokensUsed:        tokensUsed,
+			TokensRemaining:   a.manager.Budget().Remaining(tokensUsed),
 			LastToolCalls:     toolCalls,
 			RecalledMemoryIDs: recalledIDs,
 			AssistantText:     assistantText,
@@ -270,7 +272,7 @@ func (a *AgenticLoop) doRecall(ctx context.Context, state TurnState) ([]int64, s
 	}
 
 	block := buildMemoryBlock(memories)
-	memTokens := a.manager.estimator.EstimateFast(block, ContentProse)
+	memTokens := a.manager.EstimateText(block, ctxmgr.ContentProse)
 
 	// Trim lowest-score memories until block fits or is empty
 	for !a.manager.WillFit(memTokens) && len(memories) > 0 {
@@ -283,7 +285,7 @@ func (a *AgenticLoop) doRecall(ctx context.Context, state TurnState) ([]int64, s
 			return nil, ""
 		}
 		block = buildMemoryBlock(memories)
-		memTokens = a.manager.estimator.EstimateFast(block, ContentProse)
+		memTokens = a.manager.EstimateText(block, ctxmgr.ContentProse)
 	}
 
 	var ids []int64

@@ -1,4 +1,4 @@
-package contextmanager
+package agentic
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 )
 
 type scriptedMessageClient struct {
@@ -33,9 +34,9 @@ func makeTextResponse(text string) *anthropic.Message {
 	}
 }
 
-func newLoopManager() *ContextManager {
-	estimator := NewTokenEstimator(nil, "", false)
-	budget := &ContextBudget{
+func newLoopManager() *ctxmgr.ContextManager {
+	estimator := ctxmgr.NewTokenEstimator(nil, "", false)
+	budget := &ctxmgr.ContextBudget{
 		ModelContextLimit: 200000,
 		MaxOutputTokens:   16000,
 		SystemTokens:      1000,
@@ -43,7 +44,7 @@ func newLoopManager() *ContextManager {
 		SafetyMargin:      8000,
 	}
 	initial := anthropic.NewUserMessage(anthropic.NewTextBlock("What is quantum computing?"))
-	return NewContextManager(ContextManagerConfig{
+	return ctxmgr.NewContextManager(ctxmgr.ContextManagerConfig{
 		Estimator: estimator,
 		Budget:    budget,
 	}, initial)

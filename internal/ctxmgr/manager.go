@@ -1,4 +1,4 @@
-package contextmanager
+package ctxmgr
 
 import (
 	"context"
@@ -182,6 +182,14 @@ func (m *ContextManager) extractMultiTurnText(turns []Turn) string {
 		sb.WriteString("\n\n")
 	}
 	return sb.String()
+}
+
+func (m *ContextManager) EstimateAllTokens() int {
+	return m.estimateAll()
+}
+
+func (m *ContextManager) EstimateText(text string, ct ContentType) int {
+	return m.estimator.EstimateFast(text, ct)
 }
 
 func (m *ContextManager) ExtractFinalAnswer() string {

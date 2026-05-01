@@ -1,4 +1,4 @@
-package contextmanager
+package agentic
 
 import (
 	"context"
@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
+	"github.com/dancsalo/arxiv-deep-research/internal/registry"
 )
 
 func TestAgenticLoopBasicSingleTurn(t *testing.T) {
@@ -35,15 +37,15 @@ func TestAgenticLoopToolUseThenEndTurn(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "42", nil
 	})
-	registry.Register("finish", BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
+	reg.Register("finish", BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
 		return string(input), nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns:   10,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -127,12 +129,12 @@ func TestAgenticLoopMaxTurnsExceeded(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "ok", nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns:   2,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -213,12 +215,12 @@ func TestAgenticLoopMemoryDeduplication(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "ok", nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, recaller, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, recaller, AgenticLoopConfig{
 		MaxTurns:   10,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -256,12 +258,12 @@ func TestAgenticLoopMemorySkipFirstN(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "ok", nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, recaller, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, recaller, AgenticLoopConfig{
 		MaxTurns:   10,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -300,12 +302,12 @@ func TestAgenticLoopMemoryRecallEveryN(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "ok", nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, recaller, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, recaller, AgenticLoopConfig{
 		MaxTurns:   10,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -393,12 +395,12 @@ func TestAgenticLoopHookOnTurnStart(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "ok", nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns:   10,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -436,12 +438,12 @@ func TestAgenticLoopHookOnTurnEnd(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "ok", nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns:   10,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -548,15 +550,15 @@ func TestAgenticLoopHookOnMemoryPersistState(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "42", nil
 	})
-	registry.Register("finish", BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
+	reg.Register("finish", BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
 		return string(input), nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns:   10,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -624,12 +626,12 @@ func TestAgenticLoopHookOnToolCallReceivesJSON(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
-	registry.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
+	reg := registry.NewToolRegistry()
+	reg.Register("calc", minimalToolDef("calc"), func(_ context.Context, _ json.RawMessage) (string, error) {
 		return "ok", nil
 	})
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns:   10,
 		MaxCostUSD: 1.0,
 		Model:      anthropic.ModelClaudeHaiku4_5,
@@ -704,13 +706,13 @@ func TestAgenticLoopDefaultPriority(t *testing.T) {
 	}
 
 	manager := newAgenticLoopManager()
-	registry := NewToolRegistry()
+	reg := registry.NewToolRegistry()
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns:        10,
 		MaxCostUSD:      1.0,
 		Model:           anthropic.ModelClaudeHaiku4_5,
-		DefaultPriority: PrioritySupplementary,
+		DefaultPriority: ctxmgr.PrioritySupplementary,
 	}, nil)
 
 	_, err := loop.Run(bgctx(), "test")
@@ -722,8 +724,8 @@ func TestAgenticLoopDefaultPriority(t *testing.T) {
 	if turn == nil {
 		t.Fatal("expected turn 0")
 	}
-	if turn.Priority != PrioritySupplementary {
-		t.Errorf("priority = %d, want %d", turn.Priority, PrioritySupplementary)
+	if turn.Priority != ctxmgr.PrioritySupplementary {
+		t.Errorf("priority = %d, want %d", turn.Priority, ctxmgr.PrioritySupplementary)
 	}
 }
 

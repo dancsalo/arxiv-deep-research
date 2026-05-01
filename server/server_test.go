@@ -15,7 +15,9 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	contextmanager "github.com/dancsalo/arxiv-deep-research"
+	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
+	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
+	"github.com/dancsalo/arxiv-deep-research/internal/registry"
 )
 
 type scriptedClient struct {
@@ -33,7 +35,7 @@ func (s *scriptedClient) CreateMessage(_ context.Context, _ anthropic.MessageNew
 }
 
 func testFactory(answer string) LoopFactory {
-	return func(query string, logger *slog.Logger) (*contextmanager.AgenticLoop, error) {
+	return func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error) {
 		client := &scriptedClient{
 			responses: []*anthropic.Message{
 				{
@@ -43,20 +45,20 @@ func testFactory(answer string) LoopFactory {
 				},
 			},
 		}
-		estimator := contextmanager.NewTokenEstimator(nil, "", false)
-		budget := &contextmanager.ContextBudget{
+		estimator := ctxmgr.NewTokenEstimator(nil, "", false)
+		budget := &ctxmgr.ContextBudget{
 			ModelContextLimit: 200000,
 			MaxOutputTokens:   8192,
 			SafetyMargin:      2000,
 		}
 		initial := anthropic.NewUserMessage(anthropic.NewTextBlock(query))
-		manager := contextmanager.NewContextManager(contextmanager.ContextManagerConfig{
+		manager := ctxmgr.NewContextManager(ctxmgr.ContextManagerConfig{
 			Estimator: estimator,
 			Budget:    budget,
 		}, initial)
-		registry := contextmanager.NewToolRegistry()
+		reg := registry.NewToolRegistry()
 
-		return contextmanager.NewAgenticLoop(client, manager, registry, nil, contextmanager.AgenticLoopConfig{
+		return agentic.NewAgenticLoop(client, manager, reg, nil, agentic.AgenticLoopConfig{
 			MaxTurns:   5,
 			MaxCostUSD: 1.0,
 			Model:      anthropic.ModelClaudeHaiku4_5,
@@ -66,14 +68,14 @@ func testFactory(answer string) LoopFactory {
 }
 
 func errorFactory(err error) LoopFactory {
-	return func(_ string, _ *slog.Logger) (*contextmanager.AgenticLoop, error) {
+	return func(_ string, _ *slog.Logger) (*agentic.AgenticLoop, error) {
 		return nil, err
 	}
 }
 
 func blockingFactory(started chan struct{}, unblock chan struct{}) LoopFactory {
 	var once sync.Once
-	return func(query string, logger *slog.Logger) (*contextmanager.AgenticLoop, error) {
+	return func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error) {
 		if started != nil {
 			once.Do(func() { close(started) })
 		}
@@ -273,23 +275,23 @@ func TestSingleFlightRejects(t *testing.T) {
 func TestClientDisconnectCancels(t *testing.T) {
 	cancelled := make(chan struct{})
 
-	factory := func(query string, logger *slog.Logger) (*contextmanager.AgenticLoop, error) {
+	factory := func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error) {
 		// Build a loop that blocks until context is cancelled
 		client := &blockingClient{cancelled: cancelled}
-		estimator := contextmanager.NewTokenEstimator(nil, "", false)
-		budget := &contextmanager.ContextBudget{
+		estimator := ctxmgr.NewTokenEstimator(nil, "", false)
+		budget := &ctxmgr.ContextBudget{
 			ModelContextLimit: 200000,
 			MaxOutputTokens:   8192,
 			SafetyMargin:      2000,
 		}
 		initial := anthropic.NewUserMessage(anthropic.NewTextBlock(query))
-		manager := contextmanager.NewContextManager(contextmanager.ContextManagerConfig{
+		manager := ctxmgr.NewContextManager(ctxmgr.ContextManagerConfig{
 			Estimator: estimator,
 			Budget:    budget,
 		}, initial)
-		registry := contextmanager.NewToolRegistry()
+		reg := registry.NewToolRegistry()
 
-		return contextmanager.NewAgenticLoop(client, manager, registry, nil, contextmanager.AgenticLoopConfig{
+		return agentic.NewAgenticLoop(client, manager, reg, nil, agentic.AgenticLoopConfig{
 			MaxTurns:   5,
 			MaxCostUSD: 1.0,
 			Model:      anthropic.ModelClaudeHaiku4_5,

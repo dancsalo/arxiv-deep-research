@@ -1,4 +1,4 @@
-package contextmanager
+package agentic
 
 import (
 	"fmt"
