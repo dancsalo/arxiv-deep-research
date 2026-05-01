@@ -24,6 +24,9 @@ Always use `make` targets rather than running `go` commands directly.
 
 ## Project structure
 
+- `internal/ctxmgr/` — context management core (turns, budget, compaction, estimator, guardrails, tool sizing)
+- `internal/registry/` — tool registry and toolsets
+- `internal/agentic/` — agentic loop, research loop, memory recall
 - `cmd/server/` — HTTP server binary (agentic loop with SSE streaming)
 - `memoryclient/` — memory store client (search, store, bootstrap, migrations)
 - `server/` — HTTP server and SSE handler packages
