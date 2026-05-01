@@ -1,16 +1,18 @@
-package contextmanager
+package agentic
 
 import (
 	"log/slog"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
+	"github.com/dancsalo/arxiv-deep-research/internal/registry"
 )
 
 func TestNewAgenticLoopAppliesDefaults(t *testing.T) {
 	client := &scriptedMessageClient{}
 	manager := newLoopManager()
-	registry := NewToolRegistry()
+	reg := registry.NewToolRegistry()
 
 	tests := []struct {
 		name     string
@@ -75,8 +77,8 @@ func TestNewAgenticLoopAppliesDefaults(t *testing.T) {
 			name: "zero DefaultPriority defaults to PriorityCore",
 			cfg:  AgenticLoopConfig{},
 			checkFn: func(t *testing.T, loop *AgenticLoop) {
-				if loop.cfg.DefaultPriority != PriorityCore {
-					t.Errorf("DefaultPriority = %d, want %d", loop.cfg.DefaultPriority, PriorityCore)
+				if loop.cfg.DefaultPriority != ctxmgr.PriorityCore {
+					t.Errorf("DefaultPriority = %d, want %d", loop.cfg.DefaultPriority, ctxmgr.PriorityCore)
 				}
 			},
 		},
@@ -106,7 +108,7 @@ func TestNewAgenticLoopAppliesDefaults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.cfg.Model = anthropic.ModelClaudeHaiku4_5
 			tt.cfg.MaxTurns = 1
-			loop := NewAgenticLoop(client, manager, registry, nil, tt.cfg, nil)
+			loop := NewAgenticLoop(client, manager, reg, nil, tt.cfg, nil)
 			tt.checkFn(t, loop)
 		})
 	}
@@ -115,9 +117,9 @@ func TestNewAgenticLoopAppliesDefaults(t *testing.T) {
 func TestNewAgenticLoopNilRecaller(t *testing.T) {
 	client := &scriptedMessageClient{}
 	manager := newLoopManager()
-	registry := NewToolRegistry()
+	reg := registry.NewToolRegistry()
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns: 1,
 		Model:    anthropic.ModelClaudeHaiku4_5,
 	}, nil)
@@ -133,9 +135,9 @@ func TestNewAgenticLoopNilRecaller(t *testing.T) {
 func TestNewAgenticLoopNilHooks(t *testing.T) {
 	client := &scriptedMessageClient{}
 	manager := newLoopManager()
-	registry := NewToolRegistry()
+	reg := registry.NewToolRegistry()
 
-	loop := NewAgenticLoop(client, manager, registry, nil, AgenticLoopConfig{
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
 		MaxTurns: 1,
 		Model:    anthropic.ModelClaudeHaiku4_5,
 		Hooks:    nil,

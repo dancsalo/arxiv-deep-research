@@ -3,7 +3,7 @@ package memoryclient
 import (
 	"context"
 
-	contextmanager "github.com/dancsalo/arxiv-deep-research"
+	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
 )
 
 type MemorySearcher interface {
@@ -18,15 +18,15 @@ func NewRecallerAdapter(client MemorySearcher) *RecallerAdapter {
 	return &RecallerAdapter{searcher: client}
 }
 
-func (a *RecallerAdapter) RecallMemories(ctx context.Context, query string, mode string, limit int) ([]contextmanager.RecalledMemory, error) {
+func (a *RecallerAdapter) RecallMemories(ctx context.Context, query string, mode string, limit int) ([]agentic.RecalledMemory, error) {
 	result, err := a.searcher.SearchMemories(ctx, query, mode, limit, "")
 	if err != nil {
 		return nil, err
 	}
 
-	memories := make([]contextmanager.RecalledMemory, len(result.Matches))
+	memories := make([]agentic.RecalledMemory, len(result.Matches))
 	for i, row := range result.Matches {
-		memories[i] = contextmanager.RecalledMemory{
+		memories[i] = agentic.RecalledMemory{
 			ID:    row.ID,
 			Type:  row.Type,
 			Title: row.Title,

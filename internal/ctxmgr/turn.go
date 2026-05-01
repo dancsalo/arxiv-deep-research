@@ -1,4 +1,4 @@
-package contextmanager
+package ctxmgr
 
 import "github.com/anthropics/anthropic-sdk-go"
 

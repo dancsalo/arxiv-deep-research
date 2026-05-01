@@ -1,4 +1,4 @@
-package contextmanager
+package agentic
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"log/slog"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
+	"github.com/dancsalo/arxiv-deep-research/internal/registry"
 )
 
 type RecalledMemory struct {
@@ -54,7 +56,7 @@ type AgenticLoopConfig struct {
 	Model           anthropic.Model
 	SessionID       string
 	FinishTool      string
-	DefaultPriority TurnPriority
+	DefaultPriority ctxmgr.TurnPriority
 	MemoryRecall    MemoryRecallConfig
 	Hooks           *LoopHooks
 	Logger          *slog.Logger
@@ -62,8 +64,8 @@ type AgenticLoopConfig struct {
 
 type AgenticLoop struct {
 	client   MessageClient
-	manager  *ContextManager
-	registry *ToolRegistry
+	manager  *ctxmgr.ContextManager
+	registry *registry.ToolRegistry
 	recaller MemoryRecaller
 	cfg      AgenticLoopConfig
 	system   []anthropic.TextBlockParam
@@ -79,8 +81,8 @@ type AgenticLoop struct {
 
 func NewAgenticLoop(
 	client MessageClient,
-	manager *ContextManager,
-	registry *ToolRegistry,
+	manager *ctxmgr.ContextManager,
+	reg *registry.ToolRegistry,
 	recaller MemoryRecaller,
 	cfg AgenticLoopConfig,
 	system []anthropic.TextBlockParam,
@@ -101,7 +103,7 @@ func NewAgenticLoop(
 	}
 
 	if cfg.DefaultPriority == 0 {
-		cfg.DefaultPriority = PriorityCore
+		cfg.DefaultPriority = ctxmgr.PriorityCore
 	}
 
 	logger := cfg.Logger
@@ -117,7 +119,7 @@ func NewAgenticLoop(
 	return &AgenticLoop{
 		client:   client,
 		manager:  manager,
-		registry: registry,
+		registry: reg,
 		recaller: recaller,
 		cfg:      cfg,
 		system:   system,
