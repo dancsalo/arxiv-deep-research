@@ -190,11 +190,12 @@ func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
 		a.manager.AddTurn(assistantMsg, toolResultMsg, a.cfg.DefaultPriority)
 
 		// Post-turn state for hooks
+		tokensUsed = a.manager.EstimateAllTokens()
 		postState := TurnState{
 			TurnIndex:         a.turnIndex,
 			TotalCostUSD:      a.totalCostUSD,
-			TokensUsed:        a.manager.EstimateAllTokens(),
-			TokensRemaining:   a.manager.Budget().Remaining(a.manager.EstimateAllTokens()),
+			TokensUsed:        tokensUsed,
+			TokensRemaining:   a.manager.Budget().Remaining(tokensUsed),
 			LastToolCalls:     toolCalls,
 			RecalledMemoryIDs: recalledIDs,
 			AssistantText:     assistantText,
