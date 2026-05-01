@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Agentic Loop</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: monospace; background: #1a1a2e; color: #e0e0e0; padding: 2rem; }
+        h1 { color: #7D56F4; margin-bottom: 1rem; }
+        .input-row { display: flex; gap: 0.5rem; margin-bottom: 1rem; }
+        input[type="text"] {
+            flex: 1; padding: 0.5rem; background: #16213e; border: 1px solid #7D56F4;
+            color: #e0e0e0; font-family: monospace; font-size: 1rem; border-radius: 4px;
+        }
+        button {
+            padding: 0.5rem 1.5rem; background: #7D56F4; color: white; border: none;
+            font-family: monospace; font-size: 1rem; cursor: pointer; border-radius: 4px;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #log {
+            background: #0f0f23; border: 1px solid #333; border-radius: 4px;
+            padding: 1rem; height: 70vh; overflow-y: auto; font-size: 0.85rem;
+            line-height: 1.6;
+        }
+        .log-entry { margin-bottom: 0.25rem; }
+        .log-time { color: #666; }
+        .log-info { color: #04B575; }
+        .log-warn { color: #FFD700; }
+        .log-error { color: #FF6B6B; }
+        .log-debug { color: #666; }
+        .log-attrs { color: #888; }
+        .answer { background: #1a3a1a; padding: 1rem; border-radius: 4px;
+                  margin-top: 0.5rem; border: 1px solid #04B575; white-space: pre-wrap; }
+        .error-box { background: #3a1a1a; padding: 1rem; border-radius: 4px;
+                     margin-top: 0.5rem; border: 1px solid #FF6B6B; }
+        .status { color: #888; font-style: italic; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+    <h1>Agentic Loop</h1>
+    <div class="input-row">
+        <input type="text" id="query" placeholder="Enter your query..." autofocus />
+        <button id="submit" onclick="run()">Run</button>
+    </div>
+    <div id="status" class="status"></div>
+    <div id="log"></div>
+    <script>
+        const MSG_FORMATS = {
+            'turn.start': d => `Turn ${d.turn} started (${d.tokens_remaining} tokens remaining)`,
+            'memory.recall': d => `Recalled ${d.injected} memories (searched: "${d.query}")`,
+            'memory.recall.skip': d => `Memory recall skipped: ${d.reason}`,
+            'memory.recall.failed': d => `Memory recall failed: ${d.err}`,
+            'llm.call': d => `LLM response: ${d.output_tokens} tokens, $${Number(d.cost_usd).toFixed(4)}`,
+            'tool.execute': d => `${d.tool} completed (${d.latency_ms}ms)`,
+            'tool.unknown': d => `Unknown tool: ${d.tool}`,
+            'hook.error': d => `Hook error (${d.hook}): ${d.err}`,
+            'loop.cancelled': d => `Loop cancelled`,
+        };
+
+        async function run() {
+            const query = document.getElementById('query').value.trim();
+            if (!query) return;
+            const btn = document.getElementById('submit');
+            const log = document.getElementById('log');
+            const status = document.getElementById('status');
+            btn.disabled = true;
+            log.innerHTML = '';
+            status.textContent = 'Running...';
+
+            try {
+                const resp = await fetch('/query', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({query}),
+                });
+
+                if (!resp.ok) {
+                    const text = await resp.text();
+                    log.insertAdjacentHTML('beforeend',
+                        `<div class="error-box">HTTP ${resp.status}: ${esc(text)}</div>`);
+                    return;
+                }
+
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const {done, value} = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, {stream: true});
+
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    let eventType = 'log';
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            eventType = line.slice(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                handleEvent(eventType, data);
+                            } catch (e) { /* skip malformed */ }
+                            eventType = 'log';
+                        } else if (line === '') {
+                            eventType = 'log';
+                        }
+                    }
+                }
+            } catch (e) {
+                log.insertAdjacentHTML('beforeend',
+                    `<div class="error-box">Connection error: ${esc(e.message)}</div>`);
+            } finally {
+                btn.disabled = false;
+                status.textContent = '';
+            }
+        }
+
+        function handleEvent(type, data) {
+            const log = document.getElementById('log');
+            if (type === 'done') {
+                document.getElementById('status').textContent = 'Complete';
+                log.insertAdjacentHTML('beforeend',
+                    `<div class="answer"><strong>Answer:</strong>\n${esc(data.answer)}</div>`);
+            } else if (type === 'error') {
+                document.getElementById('status').textContent = 'Error';
+                log.insertAdjacentHTML('beforeend',
+                    `<div class="error-box">${esc(data.error)}</div>`);
+            } else {
+                const time = data.time ? data.time.split('T')[1]?.split('.')[0] || '' : '';
+                const level = data.level || 'INFO';
+                const msg = data.msg || '';
+                const fmt = MSG_FORMATS[msg];
+                let text;
+                if (fmt) {
+                    text = fmt(data);
+                } else {
+                    const attrs = Object.entries(data)
+                        .filter(([k]) => !['time','level','msg'].includes(k))
+                        .map(([k,v]) => `${k}=${JSON.stringify(v)}`)
+                        .join(' ');
+                    text = `${msg} ${attrs}`.trim();
+                }
+                const levelClass = level === 'WARN' ? 'log-warn' :
+                                   level === 'ERROR' ? 'log-error' :
+                                   level === 'DEBUG' ? 'log-debug' : 'log-info';
+                log.insertAdjacentHTML('beforeend',
+                    `<div class="log-entry">` +
+                    `<span class="log-time">${time}</span> ` +
+                    `<span class="${levelClass}">${esc(text)}</span>` +
+                    `</div>`);
+            }
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function esc(s) {
+            const d = document.createElement('div');
+            d.textContent = String(s);
+            return d.innerHTML;
+        }
+
+        document.getElementById('query').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') run();
+        });
+    </script>
+</body>
+</html>

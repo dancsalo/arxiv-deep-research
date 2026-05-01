@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"memory-store/memoryclient"
+	"github.com/dancsalo/arxiv-deep-research/memoryclient"
 )
 
 type SizeEstimatorFunc func(args map[string]any) int

@@ -1,21 +1,20 @@
-.PHONY: build vet lint test test-go test-python check
-
-GO_EXAMPLES := $(wildcard examples/*/main.go)
-GO_SRC := $(wildcard src/go.mod)
-GO_DIRS := $(dir $(GO_EXAMPLES)) $(dir $(GO_SRC))
+.PHONY: build vet lint test test-go test-race test-python check run-server
 
 PYTHON_TEST_DIRS := services/embedding-api
 
 build:
-	@for d in $(GO_DIRS); do echo "==> build $$d"; (cd $$d && go build ./...); done
+	go build ./...
 
 vet:
-	@for d in $(GO_DIRS); do echo "==> vet $$d"; (cd $$d && go vet ./...); done
+	go vet ./...
 
 lint: vet
 
 test-go:
-	@for d in $(GO_DIRS); do echo "==> test $$d"; (cd $$d && go test ./...); done
+	go test ./...
+
+test-race:
+	go test -race ./... -count=1
 
 test-python:
 	@if ! python -m pytest --version >/dev/null 2>&1; then \
@@ -32,3 +31,6 @@ test: test-go
 	fi
 
 check: lint build test
+
+run-server:
+	go run ./cmd/server/
