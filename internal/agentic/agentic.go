@@ -11,84 +11,85 @@ import (
 	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 )
 
-func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
-	a.query = query
-	a.totalCostUSD = 0
-	a.turnIndex = 0
-	a.finished = false
-	a.seenMemoryIDs = make(map[int64]bool)
+func (l *Loop) Run(ctx context.Context, query string) (string, error) {
+	l.query = query
+	l.totalCostUSD = 0
+	l.turnIndex = 0
+	l.finished = false
+	l.seenMemoryIDs = make(map[int64]bool)
 
-	tools := a.registry.Definitions()
+	var finishResult string
+	tools := l.registry.Definitions()
 
-	for a.turnIndex < a.cfg.MaxTurns && !a.finished {
+	for l.turnIndex < l.cfg.MaxTurns && !l.finished {
 		if ctx.Err() != nil {
-			a.logger.Info("loop.cancelled", "turn", a.turnIndex, "reason", ctx.Err())
+			l.logger.Info("loop.cancelled", "turn", l.turnIndex, "reason", ctx.Err())
 			return "", ctx.Err()
 		}
 
-		tokensUsed := a.manager.EstimateAllTokens()
-		tokensRemaining := a.manager.Budget().Remaining(tokensUsed)
+		tokensUsed := l.manager.EstimateAllTokens()
+		tokensRemaining := l.manager.Budget().Remaining(tokensUsed)
 
 		state := TurnState{
-			TurnIndex:       a.turnIndex,
-			TotalCostUSD:    a.totalCostUSD,
+			TurnIndex:       l.turnIndex,
+			TotalCostUSD:    l.TotalCost(),
 			TokensUsed:      tokensUsed,
 			TokensRemaining: tokensRemaining,
 		}
 
-		a.logger.Info("turn.start", "turn", a.turnIndex, "tokens_used", tokensUsed, "tokens_remaining", tokensRemaining)
+		l.logger.Info("turn.start", "turn", l.turnIndex, "tokens_used", tokensUsed, "tokens_remaining", tokensRemaining)
 
-		if a.hooks.OnTurnStart != nil {
-			if err := a.hooks.OnTurnStart(ctx, state); err != nil {
-				a.logger.Warn("hook.error", "hook", "OnTurnStart", "err", err)
+		if l.hooks.OnTurnStart != nil {
+			if err := l.hooks.OnTurnStart(ctx, state); err != nil {
+				l.logger.Warn("hook.error", "hook", "OnTurnStart", "err", err)
 			}
 		}
 
-		// Memory recall phase
 		var memoryBlock string
 		var recalledIDs []int64
-		if a.recaller != nil && a.cfg.MemoryRecall.Enabled && a.shouldRecall() {
-			recalledIDs, memoryBlock = a.doRecall(ctx, state)
+		if l.recaller != nil && l.cfg.MemoryRecall.Enabled && l.depth == 0 && l.shouldRecall() {
+			recalledIDs, memoryBlock = l.doRecall(ctx, state)
 		}
 
-		if err := a.manager.PreAPICheck(ctx); err != nil {
-			return "", fmt.Errorf("turn %d pre-API check failed: %w", a.turnIndex, err)
+		if err := l.manager.PreAPICheck(ctx); err != nil {
+			return "", fmt.Errorf("turn %d pre-API check failed: %w", l.turnIndex, err)
 		}
 
-		messages := a.manager.BuildMessages()
+		messages := l.manager.BuildMessages()
 		if memoryBlock != "" {
 			messages = injectMemories(messages, memoryBlock)
 		}
 
-		resp, err := a.client.CreateMessage(ctx, anthropic.MessageNewParams{
-			Model:     a.cfg.Model,
+		resp, err := l.client.CreateMessage(ctx, anthropic.MessageNewParams{
+			Model:     l.cfg.Model,
 			MaxTokens: 8192,
 			Tools:     tools,
-			System:    a.system,
+			System:    l.system,
 			Messages:  messages,
 		})
 		if err != nil {
-			return "", fmt.Errorf("turn %d API error: %w", a.turnIndex, err)
+			return "", fmt.Errorf("turn %d API error: %w", l.turnIndex, err)
 		}
 
-		cost := estimateCost(resp.Usage, a.cfg.Model)
-		a.totalCostUSD += cost
-		a.manager.OutputTracker().Record(int(resp.Usage.OutputTokens))
+		cost := estimateCost(resp.Usage, l.cfg.Model)
+		l.mu.Lock()
+		l.totalCostUSD += cost
+		l.mu.Unlock()
+		l.manager.OutputTracker().Record(int(resp.Usage.OutputTokens))
 
-		a.logger.Info("llm.call", "turn", a.turnIndex, "model", string(a.cfg.Model),
+		l.logger.Info("llm.call", "turn", l.turnIndex, "model", string(l.cfg.Model),
 			"input_tokens", resp.Usage.InputTokens, "output_tokens", resp.Usage.OutputTokens,
 			"cost_usd", cost)
 
 		if ctx.Err() != nil {
-			a.logger.Info("loop.cancelled", "turn", a.turnIndex, "reason", ctx.Err())
+			l.logger.Info("loop.cancelled", "turn", l.turnIndex, "reason", ctx.Err())
 			return "", ctx.Err()
 		}
 
-		if a.totalCostUSD > a.cfg.MaxCostUSD {
-			return "", fmt.Errorf("cost limit exceeded: $%.4f > $%.4f", a.totalCostUSD, a.cfg.MaxCostUSD)
+		if l.TotalCost() > l.cfg.MaxCostUSD {
+			return "", fmt.Errorf("cost limit exceeded: $%.4f > $%.4f", l.TotalCost(), l.cfg.MaxCostUSD)
 		}
 
-		// Process response blocks
 		var toolResults []anthropic.ContentBlockParamUnion
 		var toolCalls []string
 		toolResultTexts := make(map[string]string)
@@ -104,9 +105,15 @@ func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
 				toolID := block.ID
 				toolInput := block.Input
 
-				if toolName == a.cfg.FinishTool {
-					a.finished = true
-					result, execErr := a.registry.Execute(ctx, toolName, toolInput)
+				if toolName == l.cfg.FinishTool {
+					l.finished = true
+					var parsed struct {
+						Summary string `json:"summary"`
+					}
+					if err := json.Unmarshal(toolInput, &parsed); err == nil && parsed.Summary != "" {
+						finishResult = parsed.Summary
+					}
+					result, execErr := l.registry.Execute(ctx, toolName, toolInput)
 					if execErr != nil {
 						toolResults = append(toolResults,
 							anthropic.NewToolResultBlock(toolID, fmt.Sprintf("error: %v", execErr), true))
@@ -119,14 +126,14 @@ func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
 					continue
 				}
 
-				if a.hooks.OnToolCall != nil {
-					if err := a.hooks.OnToolCall(ctx, toolName, toolInput, state); err != nil {
-						a.logger.Warn("hook.error", "hook", "OnToolCall", "err", err)
+				if l.hooks.OnToolCall != nil {
+					if err := l.hooks.OnToolCall(ctx, toolName, toolInput, state); err != nil {
+						l.logger.Warn("hook.error", "hook", "OnToolCall", "err", err)
 					}
 				}
 
 				args := jsonToMap(toolInput)
-				decision, guardErr := a.manager.PreToolGuardrail(ctx, toolName, args)
+				decision, guardErr := l.manager.PreToolGuardrail(ctx, toolName, args)
 				if guardErr != nil {
 					toolResults = append(toolResults,
 						anthropic.NewToolResultBlock(toolID, fmt.Sprintf("error: %v", guardErr), true))
@@ -149,16 +156,16 @@ func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
 				}
 
 				start := time.Now()
-				result, execErr := a.registry.Execute(ctx, toolName, execInput)
+				result, execErr := l.registry.Execute(ctx, toolName, execInput)
 				latency := time.Since(start).Milliseconds()
 
 				if execErr != nil {
-					a.logger.Warn("tool.unknown", "tool", toolName)
+					l.logger.Warn("tool.unknown", "tool", toolName)
 					toolResults = append(toolResults,
 						anthropic.NewToolResultBlock(toolID, fmt.Sprintf("error: %v", execErr), true))
 				} else {
-					a.logger.Info("tool.execute", "turn", a.turnIndex, "tool", toolName, "latency_ms", latency)
-					if postErr := a.manager.PostToolCheck(ctx, toolName, result); postErr != nil {
+					l.logger.Info("tool.execute", "turn", l.turnIndex, "tool", toolName, "latency_ms", latency)
+					if postErr := l.manager.PostToolCheck(ctx, toolName, result); postErr != nil {
 						_ = postErr
 					}
 					toolResults = append(toolResults,
@@ -166,13 +173,13 @@ func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
 					toolResultTexts[toolName] = result
 				}
 
-				if a.hooks.OnToolResult != nil {
+				if l.hooks.OnToolResult != nil {
 					resultText := result
 					if execErr != nil {
 						resultText = execErr.Error()
 					}
-					if err := a.hooks.OnToolResult(ctx, toolName, resultText, state); err != nil {
-						a.logger.Warn("hook.error", "hook", "OnToolResult", "err", err)
+					if err := l.hooks.OnToolResult(ctx, toolName, resultText, state); err != nil {
+						l.logger.Warn("hook.error", "hook", "OnToolResult", "err", err)
 					}
 				}
 
@@ -180,88 +187,88 @@ func (a *AgenticLoop) Run(ctx context.Context, query string) (string, error) {
 			}
 		}
 
-		// Record turn
 		assistantMsg := responseToAssistantParam(resp)
 		var toolResultMsg *anthropic.MessageParam
 		if len(toolResults) > 0 {
 			msg := anthropic.NewUserMessage(toolResults...)
 			toolResultMsg = &msg
 		}
-		a.manager.AddTurn(assistantMsg, toolResultMsg, a.cfg.DefaultPriority)
+		l.manager.AddTurn(assistantMsg, toolResultMsg, l.cfg.DefaultPriority)
 
-		// Post-turn state for hooks
-		tokensUsed = a.manager.EstimateAllTokens()
+		tokensUsed = l.manager.EstimateAllTokens()
 		postState := TurnState{
-			TurnIndex:         a.turnIndex,
-			TotalCostUSD:      a.totalCostUSD,
+			TurnIndex:         l.turnIndex,
+			TotalCostUSD:      l.TotalCost(),
 			TokensUsed:        tokensUsed,
-			TokensRemaining:   a.manager.Budget().Remaining(tokensUsed),
+			TokensRemaining:   l.manager.Budget().Remaining(tokensUsed),
 			LastToolCalls:     toolCalls,
 			RecalledMemoryIDs: recalledIDs,
 			AssistantText:     assistantText,
 			ToolResultTexts:   toolResultTexts,
 		}
 
-		if a.hooks.OnMemoryPersist != nil {
-			if err := a.hooks.OnMemoryPersist(ctx, postState); err != nil {
-				a.logger.Warn("hook.error", "hook", "OnMemoryPersist", "err", err)
+		if l.hooks.OnMemoryPersist != nil {
+			if err := l.hooks.OnMemoryPersist(ctx, postState); err != nil {
+				l.logger.Warn("hook.error", "hook", "OnMemoryPersist", "err", err)
 			}
 		}
 
-		// Termination check
 		if ctx.Err() != nil {
-			a.logger.Info("loop.cancelled", "turn", a.turnIndex, "reason", ctx.Err())
+			l.logger.Info("loop.cancelled", "turn", l.turnIndex, "reason", ctx.Err())
 			return "", ctx.Err()
 		}
-		if a.finished || resp.StopReason == "end_turn" {
-			if a.hooks.OnTurnEnd != nil {
-				if err := a.hooks.OnTurnEnd(ctx, postState); err != nil {
-					a.logger.Warn("hook.error", "hook", "OnTurnEnd", "err", err)
+		if l.finished || resp.StopReason == "end_turn" {
+			if l.hooks.OnTurnEnd != nil {
+				if err := l.hooks.OnTurnEnd(ctx, postState); err != nil {
+					l.logger.Warn("hook.error", "hook", "OnTurnEnd", "err", err)
 				}
 			}
 			break
 		}
 
-		if a.hooks.OnTurnEnd != nil {
-			if err := a.hooks.OnTurnEnd(ctx, postState); err != nil {
-				a.logger.Warn("hook.error", "hook", "OnTurnEnd", "err", err)
+		if l.hooks.OnTurnEnd != nil {
+			if err := l.hooks.OnTurnEnd(ctx, postState); err != nil {
+				l.logger.Warn("hook.error", "hook", "OnTurnEnd", "err", err)
 			}
 		}
 
-		a.turnIndex++
+		l.turnIndex++
 	}
 
-	return a.manager.ExtractFinalAnswer(), nil
+	if finishResult != "" {
+		return finishResult, nil
+	}
+	return l.manager.ExtractFinalAnswer(), nil
 }
 
-func (a *AgenticLoop) shouldRecall() bool {
-	if a.turnIndex < a.cfg.MemoryRecall.SkipFirstN {
+func (l *Loop) shouldRecall() bool {
+	if l.turnIndex < l.cfg.MemoryRecall.SkipFirstN {
 		return false
 	}
-	offset := a.turnIndex - a.cfg.MemoryRecall.SkipFirstN
-	return offset%a.cfg.MemoryRecall.RecallEveryN == 0
+	offset := l.turnIndex - l.cfg.MemoryRecall.SkipFirstN
+	return offset%l.cfg.MemoryRecall.RecallEveryN == 0
 }
 
-func (a *AgenticLoop) doRecall(ctx context.Context, state TurnState) ([]int64, string) {
-	lastText := a.manager.ExtractFinalAnswer()
-	recallQuery := buildRecallQuery(a.query, lastText, a.turnIndex)
+func (l *Loop) doRecall(ctx context.Context, state TurnState) ([]int64, string) {
+	lastText := l.manager.ExtractFinalAnswer()
+	recallQuery := buildRecallQuery(l.query, lastText, l.turnIndex)
 
-	memories, err := a.recaller.RecallMemories(ctx, recallQuery, a.cfg.MemoryRecall.SearchMode, a.cfg.MemoryRecall.MaxResults)
+	memories, err := l.recaller.RecallMemories(ctx, recallQuery, l.cfg.MemoryRecall.SearchMode, l.cfg.MemoryRecall.MaxResults)
 	if err != nil {
-		a.logger.Warn("memory.recall.failed", "err", err)
+		l.logger.Warn("memory.recall.failed", "err", err)
 		return nil, ""
 	}
 
-	memories = a.filterNewMemories(memories)
+	memories = l.filterNewMemories(memories)
 	if len(memories) == 0 {
-		a.logger.Debug("memory.recall.skip", "reason", "no new memories")
+		l.logger.Debug("memory.recall.skip", "reason", "no new memories")
 		return nil, ""
 	}
 
-	if a.hooks.OnMemoryRecall != nil {
-		filtered, err := a.hooks.OnMemoryRecall(ctx, memories, state)
+	if l.hooks.OnMemoryRecall != nil {
+		filtered, err := l.hooks.OnMemoryRecall(ctx, memories, state)
 		if err != nil {
-			a.logger.Warn("hook.error", "hook", "OnMemoryRecall", "err", err)
+			l.logger.Warn("hook.error", "hook", "OnMemoryRecall", "err", err)
 			return nil, ""
 		}
 		memories = filtered
@@ -272,20 +279,19 @@ func (a *AgenticLoop) doRecall(ctx context.Context, state TurnState) ([]int64, s
 	}
 
 	block := buildMemoryBlock(memories)
-	memTokens := a.manager.EstimateText(block, ctxmgr.ContentProse)
+	memTokens := l.manager.EstimateText(block, ctxmgr.ContentProse)
 
-	// Trim lowest-score memories until block fits or is empty
-	for !a.manager.WillFit(memTokens) && len(memories) > 0 {
+	for !l.manager.WillFit(memTokens) && len(memories) > 0 {
 		sort.Slice(memories, func(i, j int) bool {
 			return memories[i].Score < memories[j].Score
 		})
 		memories = memories[1:]
 		if len(memories) == 0 {
-			a.logger.Debug("memory.recall.skip", "reason", "budget exhausted")
+			l.logger.Debug("memory.recall.skip", "reason", "budget exhausted")
 			return nil, ""
 		}
 		block = buildMemoryBlock(memories)
-		memTokens = a.manager.EstimateText(block, ctxmgr.ContentProse)
+		memTokens = l.manager.EstimateText(block, ctxmgr.ContentProse)
 	}
 
 	var ids []int64
@@ -293,7 +299,7 @@ func (a *AgenticLoop) doRecall(ctx context.Context, state TurnState) ([]int64, s
 		ids = append(ids, m.ID)
 	}
 
-	a.logger.Info("memory.recall", "turn", a.turnIndex, "query", recallQuery, "results", len(memories), "injected", len(memories))
+	l.logger.Info("memory.recall", "turn", l.turnIndex, "query", recallQuery, "results", len(memories), "injected", len(memories))
 
 	return ids, block
 }

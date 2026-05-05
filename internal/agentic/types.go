@@ -3,7 +3,9 @@ package agentic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
@@ -42,17 +44,18 @@ type TurnState struct {
 }
 
 type LoopHooks struct {
-	OnTurnStart    func(ctx context.Context, state TurnState) error
-	OnTurnEnd      func(ctx context.Context, state TurnState) error
-	OnToolCall     func(ctx context.Context, toolName string, input json.RawMessage, state TurnState) error
-	OnToolResult   func(ctx context.Context, toolName string, result string, state TurnState) error
-	OnMemoryRecall func(ctx context.Context, memories []RecalledMemory, state TurnState) ([]RecalledMemory, error)
+	OnTurnStart     func(ctx context.Context, state TurnState) error
+	OnTurnEnd       func(ctx context.Context, state TurnState) error
+	OnToolCall      func(ctx context.Context, toolName string, input json.RawMessage, state TurnState) error
+	OnToolResult    func(ctx context.Context, toolName string, result string, state TurnState) error
+	OnMemoryRecall  func(ctx context.Context, memories []RecalledMemory, state TurnState) ([]RecalledMemory, error)
 	OnMemoryPersist func(ctx context.Context, state TurnState) error
 }
 
-type AgenticLoopConfig struct {
+type LoopConfig struct {
 	MaxTurns        int
 	MaxCostUSD      float64
+	MaxDepth        int
 	Model           anthropic.Model
 	SessionID       string
 	FinishTool      string
@@ -62,12 +65,12 @@ type AgenticLoopConfig struct {
 	Logger          *slog.Logger
 }
 
-type AgenticLoop struct {
+type Loop struct {
 	client   MessageClient
 	manager  *ctxmgr.ContextManager
 	registry *registry.ToolRegistry
 	recaller MemoryRecaller
-	cfg      AgenticLoopConfig
+	cfg      LoopConfig
 	system   []anthropic.TextBlockParam
 	hooks    *LoopHooks
 
@@ -77,16 +80,18 @@ type AgenticLoop struct {
 	finished      bool
 	seenMemoryIDs map[int64]bool
 	logger        *slog.Logger
+	depth         int
+	mu            sync.Mutex
 }
 
-func NewAgenticLoop(
+func NewLoop(
 	client MessageClient,
 	manager *ctxmgr.ContextManager,
 	reg *registry.ToolRegistry,
 	recaller MemoryRecaller,
-	cfg AgenticLoopConfig,
+	cfg LoopConfig,
 	system []anthropic.TextBlockParam,
-) *AgenticLoop {
+) *Loop {
 	if cfg.MemoryRecall.Enabled {
 		if cfg.MemoryRecall.MaxResults == 0 {
 			cfg.MemoryRecall.MaxResults = 5
@@ -106,6 +111,10 @@ func NewAgenticLoop(
 		cfg.DefaultPriority = ctxmgr.PriorityCore
 	}
 
+	if cfg.MaxDepth == 0 {
+		cfg.MaxDepth = 3
+	}
+
 	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -116,7 +125,7 @@ func NewAgenticLoop(
 		hooks = &LoopHooks{}
 	}
 
-	return &AgenticLoop{
+	return &Loop{
 		client:   client,
 		manager:  manager,
 		registry: reg,
@@ -126,4 +135,116 @@ func NewAgenticLoop(
 		hooks:    hooks,
 		logger:   logger,
 	}
+}
+
+func (l *Loop) TotalCost() float64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.totalCostUSD
+}
+
+func (l *Loop) addChildCost(cost float64) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.totalCostUSD += cost
+}
+
+type ChildConfig struct {
+	Query      string
+	MaxTurns   int
+	MaxCostUSD float64
+	Priority   ctxmgr.TurnPriority
+	Tools      *registry.ToolRegistry
+	System     []anthropic.TextBlockParam
+	Model      anthropic.Model
+}
+
+func (l *Loop) Spawn(cfg ChildConfig) (*Loop, error) {
+	nextDepth := l.depth + 1
+	if nextDepth >= l.cfg.MaxDepth {
+		return nil, fmt.Errorf("max recursion depth %d reached", l.cfg.MaxDepth)
+	}
+
+	tokensUsed := l.manager.EstimateAllTokens()
+	parentRemaining := l.manager.Budget().Remaining(tokensUsed)
+	childBudget := int(float64(parentRemaining) * 0.5)
+	if childBudget > 100_000 {
+		childBudget = 100_000
+	}
+
+	initialMsg := anthropic.NewUserMessage(anthropic.NewTextBlock(cfg.Query))
+	childManager := ctxmgr.NewContextManager(ctxmgr.ContextManagerConfig{
+		Estimator: l.manager.Estimator(),
+		Budget: &ctxmgr.ContextBudget{
+			ModelContextLimit: childBudget,
+			MaxOutputTokens:   8192,
+			SafetyMargin:      1000,
+		},
+	}, initialMsg)
+
+	if cc := l.manager.CompactionClient(); cc != nil {
+		childManager.SetCompactionClient(cc)
+	}
+
+	childReg := cfg.Tools
+	if childReg == nil {
+		childReg = registry.NewToolRegistry()
+	}
+	childReg.Register("finish_loop", BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
+		return string(input), nil
+	})
+
+	model := cfg.Model
+	if model == "" {
+		model = l.cfg.Model
+	}
+
+	system := cfg.System
+	if system == nil {
+		system = l.system
+	}
+
+	priority := cfg.Priority
+	if priority == 0 {
+		priority = ctxmgr.PriorityResearch
+	}
+
+	childLogger := l.logger.With("depth", nextDepth)
+
+	child := &Loop{
+		client:   l.client,
+		manager:  childManager,
+		registry: childReg,
+		recaller: nil,
+		cfg: LoopConfig{
+			MaxTurns:        cfg.MaxTurns,
+			MaxCostUSD:      cfg.MaxCostUSD,
+			MaxDepth:        l.cfg.MaxDepth,
+			Model:           model,
+			FinishTool:      "finish_loop",
+			DefaultPriority: priority,
+			Logger:          childLogger,
+		},
+		system: system,
+		hooks:  l.hooks,
+		logger: childLogger,
+		depth:  nextDepth,
+	}
+
+	return child, nil
+}
+
+// Backward-compatible aliases
+type AgenticLoop = Loop
+type AgenticLoopConfig = LoopConfig
+
+func NewAgenticLoop(
+	client MessageClient,
+	manager *ctxmgr.ContextManager,
+	reg *registry.ToolRegistry,
+	recaller MemoryRecaller,
+	cfg LoopConfig,
+	system []anthropic.TextBlockParam,
+) *Loop {
+	return NewLoop(client, manager, reg, recaller, cfg, system)
 }

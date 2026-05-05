@@ -14,7 +14,7 @@ import (
 //go:embed static/index.html
 var staticFS embed.FS
 
-type LoopFactory func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error)
+type LoopFactory func(query string, logger *slog.Logger) (*agentic.Loop, error)
 
 type Server struct {
 	factory LoopFactory
