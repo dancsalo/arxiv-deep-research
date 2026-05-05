@@ -11,11 +11,13 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
 	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 	"github.com/dancsalo/arxiv-deep-research/internal/registry"
+	"github.com/dancsalo/arxiv-deep-research/internal/tracing"
 	"github.com/dancsalo/arxiv-deep-research/tools/research"
 )
 
@@ -29,20 +31,35 @@ func (a *sdkAdapter) CreateMessage(ctx context.Context, params anthropic.Message
 
 func main() {
 	query := flag.String("query", "retrieval augmented generation", "research query")
-	model := flag.String("model", string(anthropic.ModelClaudeHaiku4_5), "model ID")
+	model := flag.String("model", "us.anthropic.claude-3-5-haiku-20241022-v1:0", "model ID")
 	maxTurns := flag.Int("max-turns", 10, "maximum agentic loop turns")
+	useBedrock := flag.Bool("bedrock", true, "use AWS Bedrock")
 	flag.Parse()
-
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "error: ANTHROPIC_API_KEY environment variable is required")
-		os.Exit(1)
-	}
 
 	start := time.Now()
 	ctx := context.Background()
 
-	apiClient := anthropic.NewClient(option.WithAPIKey(apiKey))
+	var opts []option.RequestOption
+	if *useBedrock {
+		opts = append(opts, bedrock.WithLoadDefaultConfig(ctx))
+	} else {
+		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			fmt.Fprintln(os.Stderr, "error: ANTHROPIC_API_KEY environment variable is required")
+			os.Exit(1)
+		}
+		opts = append(opts, option.WithAPIKey(apiKey))
+	}
+	apiClient := anthropic.NewClient(opts...)
+
+	tp, shutdownTracer := tracing.InitTracer(ctx, tracing.Config{
+		Endpoint:  os.Getenv("LANGFUSE_OTLP_ENDPOINT"),
+		PublicKey: os.Getenv("LANGFUSE_PUBLIC_KEY"),
+		SecretKey: os.Getenv("LANGFUSE_SECRET_KEY"),
+	})
+	defer shutdownTracer(ctx)
+
+	tracingHooks, tracingState := tracing.NewTracingHooks(tp)
 
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	toolSet := research.NewResearchToolSet(httpClient)
@@ -82,8 +99,11 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+	var client agentic.MessageClient = &sdkAdapter{client: &apiClient}
+	client = &tracing.TracedClient{Inner: client, Hooks: tracingState}
+
 	loop := agentic.NewLoop(
-		&sdkAdapter{client: &apiClient},
+		client,
 		manager,
 		reg,
 		nil,
@@ -94,6 +114,7 @@ func main() {
 			SessionID:       fmt.Sprintf("demo-%d", time.Now().UnixMilli()),
 			FinishTool:      "finish_loop",
 			DefaultPriority: ctxmgr.PriorityCore,
+			Hooks:           tracingHooks,
 			Logger:          logger,
 		},
 		systemBlocks,
