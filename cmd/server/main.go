@@ -16,6 +16,7 @@ import (
 	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
 	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 	"github.com/dancsalo/arxiv-deep-research/internal/registry"
+	"github.com/dancsalo/arxiv-deep-research/internal/tracing"
 	"github.com/dancsalo/arxiv-deep-research/server"
 )
 
@@ -39,6 +40,15 @@ func main() {
 		opts = append(opts, bedrock.WithLoadDefaultConfig(ctx))
 	}
 	apiClient := anthropic.NewClient(opts...)
+
+	tp, shutdownTracer := tracing.InitTracer(ctx, tracing.Config{
+		Endpoint:  os.Getenv("LANGFUSE_OTLP_ENDPOINT"),
+		PublicKey: os.Getenv("LANGFUSE_PUBLIC_KEY"),
+		SecretKey: os.Getenv("LANGFUSE_SECRET_KEY"),
+	})
+	defer shutdownTracer(ctx)
+
+	tracingHooks, tracingState := tracing.NewTracingHooks(tp)
 
 	var modelID anthropic.Model
 	if *model != "" {
@@ -73,8 +83,11 @@ func main() {
 				return string(input), nil
 			})
 
+		var client agentic.MessageClient = &sdkAdapter{client: &apiClient}
+		client = &tracing.TracedClient{Inner: client, Hooks: tracingState}
+
 		loop := agentic.NewAgenticLoop(
-			&sdkAdapter{client: &apiClient},
+			client,
 			manager,
 			reg,
 			nil,
@@ -85,6 +98,7 @@ func main() {
 				SessionID:       fmt.Sprintf("web-%d", time.Now().UnixMilli()),
 				FinishTool:      "finish",
 				DefaultPriority: ctxmgr.PriorityCore,
+				Hooks:           tracingHooks,
 				Logger:          logger,
 			},
 			systemBlocks,
