@@ -1,4 +1,4 @@
-.PHONY: build vet lint test test-go test-race test-python check run-server
+.PHONY: build vet lint test test-go test-race test-python check run-server trace-list trace-show trace-errors
 
 PYTHON_TEST_DIRS := services/embedding-api
 
@@ -34,3 +34,14 @@ check: lint build test
 
 run-server:
 	go run ./cmd/server/
+
+TRACE_DIR ?= .traces
+
+trace-list: ## List recent traces
+	@find $(TRACE_DIR) -name '*.json' -print0 2>/dev/null | xargs -0 ls -t 2>/dev/null | head -20 | xargs -I{} jq -r '[.session_id, .status, .query[0:40], "\(.total_cost_usd)"] | join("\t")' {} || echo "No traces in $(TRACE_DIR)/"
+
+trace-show: ## Show a trace: make trace-show RUN=<session_id>
+	@jq . $(TRACE_DIR)/$(RUN).json
+
+trace-errors: ## Show failed traces
+	@find $(TRACE_DIR) -name '*.json' -print0 2>/dev/null | xargs -0 jq -r 'select(.status=="error") | [.session_id, .error[0:60]] | join("\t")' 2>/dev/null || echo "No errors"

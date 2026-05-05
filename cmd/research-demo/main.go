@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
 	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 	"github.com/dancsalo/arxiv-deep-research/internal/registry"
-	"github.com/dancsalo/arxiv-deep-research/tools/research"
+	"github.com/dancsalo/arxiv-deep-research/internal/tracing"
 )
 
 type sdkAdapter struct {
@@ -31,6 +30,7 @@ func main() {
 	query := flag.String("query", "retrieval augmented generation", "research query")
 	model := flag.String("model", string(anthropic.ModelClaudeHaiku4_5), "model ID")
 	maxTurns := flag.Int("max-turns", 10, "maximum agentic loop turns")
+	traceDir := flag.String("trace-dir", ".traces", "directory for trace files (empty to disable)")
 	flag.Parse()
 
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
@@ -44,20 +44,28 @@ func main() {
 
 	apiClient := anthropic.NewClient(option.WithAPIKey(apiKey))
 
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	toolSet := research.NewResearchToolSet(httpClient)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+
+	sessionID := fmt.Sprintf("demo-%d", time.Now().UnixMilli())
+	traceCfg := tracing.Config{
+		Dir:       *traceDir,
+		SessionID: sessionID,
+		Query:     *query,
+		Model:     *model,
+		Logger:    logger,
+	}
+	hooks, recorder := tracing.NewTracingHooks(traceCfg)
+
+	var client agentic.MessageClient = &sdkAdapter{client: &apiClient}
+	if traceCfg.Enabled() {
+		client = &tracing.TracedClient{Inner: client, Recorder: recorder}
+	}
 
 	reg := registry.NewToolRegistry()
-	registry.RegisterToolSets(reg, toolSet)
 	reg.Register("finish_loop", agentic.BuildFinishTool(),
 		func(_ context.Context, input json.RawMessage) (string, error) {
 			return string(input), nil
 		})
-
-	tse := ctxmgr.NewToolSizeEstimator()
-	for name, fn := range research.ResearchToolEstimators() {
-		tse.RegisterTool(name, fn)
-	}
 
 	systemBlocks := []anthropic.TextBlockParam{
 		{Text: "You are a research assistant. Search arXiv for preprints and OpenAlex for published works " +
@@ -78,12 +86,9 @@ func main() {
 		System:  systemBlocks,
 		NowFunc: time.Now,
 	}, initialMsg)
-	manager.SetToolSizeEstimator(tse)
-
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	loop := agentic.NewLoop(
-		&sdkAdapter{client: &apiClient},
+		client,
 		manager,
 		reg,
 		nil,
@@ -91,9 +96,10 @@ func main() {
 			MaxTurns:        *maxTurns,
 			MaxCostUSD:      0.25,
 			Model:           anthropic.Model(*model),
-			SessionID:       fmt.Sprintf("demo-%d", time.Now().UnixMilli()),
+			SessionID:       sessionID,
 			FinishTool:      "finish_loop",
 			DefaultPriority: ctxmgr.PriorityCore,
+			Hooks:           hooks,
 			Logger:          logger,
 		},
 		systemBlocks,
@@ -101,6 +107,13 @@ func main() {
 
 	result, err := loop.Run(ctx, *query)
 	elapsed := time.Since(start)
+
+	if err != nil {
+		recorder.SetError(err)
+	}
+	if flushErr := recorder.Flush(); flushErr != nil {
+		logger.Error("failed to flush trace", "err", flushErr)
+	}
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

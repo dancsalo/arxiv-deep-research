@@ -35,7 +35,7 @@ func (s *scriptedClient) CreateMessage(_ context.Context, _ anthropic.MessageNew
 }
 
 func testFactory(answer string) LoopFactory {
-	return func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error) {
+	return func(query string, logger *slog.Logger) (*agentic.Loop, func(), error) {
 		client := &scriptedClient{
 			responses: []*anthropic.Message{
 				{
@@ -58,24 +58,24 @@ func testFactory(answer string) LoopFactory {
 		}, initial)
 		reg := registry.NewToolRegistry()
 
-		return agentic.NewAgenticLoop(client, manager, reg, nil, agentic.AgenticLoopConfig{
+		return agentic.NewLoop(client, manager, reg, nil, agentic.LoopConfig{
 			MaxTurns:   5,
 			MaxCostUSD: 1.0,
 			Model:      anthropic.ModelClaudeHaiku4_5,
 			Logger:     logger,
-		}, nil), nil
+		}, nil), nil, nil
 	}
 }
 
 func errorFactory(err error) LoopFactory {
-	return func(_ string, _ *slog.Logger) (*agentic.AgenticLoop, error) {
-		return nil, err
+	return func(_ string, _ *slog.Logger) (*agentic.Loop, func(), error) {
+		return nil, nil, err
 	}
 }
 
 func blockingFactory(started chan struct{}, unblock chan struct{}) LoopFactory {
 	var once sync.Once
-	return func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error) {
+	return func(query string, logger *slog.Logger) (*agentic.Loop, func(), error) {
 		if started != nil {
 			once.Do(func() { close(started) })
 		}
@@ -275,8 +275,7 @@ func TestSingleFlightRejects(t *testing.T) {
 func TestClientDisconnectCancels(t *testing.T) {
 	cancelled := make(chan struct{})
 
-	factory := func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error) {
-		// Build a loop that blocks until context is cancelled
+	factory := func(query string, logger *slog.Logger) (*agentic.Loop, func(), error) {
 		client := &blockingClient{cancelled: cancelled}
 		estimator := ctxmgr.NewTokenEstimator(nil, "", false)
 		budget := &ctxmgr.ContextBudget{
@@ -291,12 +290,12 @@ func TestClientDisconnectCancels(t *testing.T) {
 		}, initial)
 		reg := registry.NewToolRegistry()
 
-		return agentic.NewAgenticLoop(client, manager, reg, nil, agentic.AgenticLoopConfig{
+		return agentic.NewLoop(client, manager, reg, nil, agentic.LoopConfig{
 			MaxTurns:   5,
 			MaxCostUSD: 1.0,
 			Model:      anthropic.ModelClaudeHaiku4_5,
 			Logger:     logger,
-		}, nil), nil
+		}, nil), nil, nil
 	}
 
 	srv := NewServer(factory, ":0")

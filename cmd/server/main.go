@@ -16,6 +16,7 @@ import (
 	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
 	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 	"github.com/dancsalo/arxiv-deep-research/internal/registry"
+	"github.com/dancsalo/arxiv-deep-research/internal/tracing"
 	"github.com/dancsalo/arxiv-deep-research/server"
 )
 
@@ -31,6 +32,7 @@ func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	useBedrock := flag.Bool("bedrock", true, "use AWS Bedrock")
 	model := flag.String("model", "", "model ID override")
+	traceDir := flag.String("trace-dir", ".traces", "directory for trace files (empty to disable)")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -49,7 +51,22 @@ func main() {
 		modelID = anthropic.ModelClaudeHaiku4_5
 	}
 
-	factory := func(query string, logger *slog.Logger) (*agentic.AgenticLoop, error) {
+	factory := func(query string, logger *slog.Logger) (*agentic.Loop, func(), error) {
+		sessionID := fmt.Sprintf("web-%d", time.Now().UnixNano())
+		traceCfg := tracing.Config{
+			Dir:       *traceDir,
+			SessionID: sessionID,
+			Query:     query,
+			Model:     string(modelID),
+			Logger:    logger,
+		}
+		hooks, recorder := tracing.NewTracingHooks(traceCfg)
+
+		var client agentic.MessageClient = &sdkAdapter{client: &apiClient}
+		if traceCfg.Enabled() {
+			client = &tracing.TracedClient{Inner: client, Recorder: recorder}
+		}
+
 		systemBlocks := []anthropic.TextBlockParam{
 			{Text: "You are a helpful research assistant.", Type: "text"},
 		}
@@ -67,29 +84,35 @@ func main() {
 		}, initialMsg)
 
 		reg := registry.NewToolRegistry()
-
 		reg.Register("finish", agentic.BuildFinishTool(),
 			func(_ context.Context, input json.RawMessage) (string, error) {
 				return string(input), nil
 			})
 
-		loop := agentic.NewAgenticLoop(
-			&sdkAdapter{client: &apiClient},
+		loop := agentic.NewLoop(
+			client,
 			manager,
 			reg,
 			nil,
-			agentic.AgenticLoopConfig{
+			agentic.LoopConfig{
 				MaxTurns:        20,
 				MaxCostUSD:      0.50,
 				Model:           modelID,
-				SessionID:       fmt.Sprintf("web-%d", time.Now().UnixMilli()),
+				SessionID:       sessionID,
 				FinishTool:      "finish",
 				DefaultPriority: ctxmgr.PriorityCore,
+				Hooks:           hooks,
 				Logger:          logger,
 			},
 			systemBlocks,
 		)
-		return loop, nil
+
+		cleanup := func() {
+			if err := recorder.Flush(); err != nil {
+				logger.Error("failed to flush trace", "err", err)
+			}
+		}
+		return loop, cleanup, nil
 	}
 
 	srv := server.NewServer(factory, *addr)
