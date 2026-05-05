@@ -111,6 +111,24 @@ func TestReduceToolArgsNoReductionNeeded(t *testing.T) {
 	}
 }
 
+func TestReduceToolArgs_SearchOpenAlex(t *testing.T) {
+	reduced, ok := reduceToolArgs("search_openalex", map[string]any{"max_results": float64(10)}, 2000)
+	if !ok {
+		t.Fatal("should have reduced")
+	}
+	n, _ := reduced["max_results"].(float64)
+	if n != 5 {
+		t.Errorf("max_results: got %v, want 5", n)
+	}
+}
+
+func TestReduceToolArgs_SearchOpenAlexNoReduction(t *testing.T) {
+	_, ok := reduceToolArgs("search_openalex", map[string]any{"max_results": float64(3)}, 2000)
+	if ok {
+		t.Error("should not reduce when max_results <= 5")
+	}
+}
+
 func TestReduceToolArgsFetchRejectsTooSmall(t *testing.T) {
 	_, ok := reduceToolArgs("fetch_page_text", map[string]any{"max_chars": float64(40000)}, 100)
 	if ok {
