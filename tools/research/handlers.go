@@ -46,14 +46,8 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 	if err := json.Unmarshal(input, &params); err != nil {
 		return toolError("invalid input: "+err.Error(), false), nil
 	}
-	if params.Query == "" {
-		return toolError("query is required", false), nil
-	}
 	if params.MaxResults <= 0 {
 		params.MaxResults = 10
-	}
-	if params.MaxResults > 50 {
-		params.MaxResults = 50
 	}
 
 	u := fmt.Sprintf("https://export.arxiv.org/api/query?search_query=all:%s&max_results=%d",
@@ -61,27 +55,27 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return toolError("failed to create request: "+err.Error(), true), nil
+		return toolError("request creation failed: "+err.Error(), false), nil
 	}
 
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return toolError("request failed: "+err.Error(), true), nil
+		return toolError("arXiv request failed: "+err.Error(), true), nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return toolError(fmt.Sprintf("arXiv returned HTTP %d", resp.StatusCode), true), nil
+		return toolError(fmt.Sprintf("arXiv returned status %d", resp.StatusCode), true), nil
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return toolError("failed to read response: "+err.Error(), true), nil
 	}
 
 	var feed atomFeed
 	if err := xml.Unmarshal(body, &feed); err != nil {
-		return toolError("failed to parse XML: "+err.Error(), true), nil
+		return toolError("failed to parse arXiv XML: "+err.Error(), true), nil
 	}
 
 	results := make([]ArxivResult, 0, len(feed.Entries))
@@ -95,7 +89,7 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 			Authors:   authors,
 			Abstract:  strings.TrimSpace(entry.Summary),
 			Link:      strings.TrimSpace(entry.ID),
-			Published: strings.TrimSpace(entry.Published),
+			Published: entry.Published,
 		})
 	}
 
@@ -116,43 +110,17 @@ type openAlexResponse struct {
 }
 
 type openAlexWork struct {
-	Title                 string                `json:"title"`
-	DOI                   string                `json:"doi"`
-	PublicationYear       int                   `json:"publication_year"`
-	Authorships           []openAlexAuthorship  `json:"authorships"`
-	AbstractInvertedIndex map[string][]int      `json:"abstract_inverted_index"`
+	Title                 string               `json:"title"`
+	DOI                   string               `json:"doi"`
+	PublicationYear       int                  `json:"publication_year"`
+	Authorships           []openAlexAuthorship `json:"authorships"`
+	AbstractInvertedIndex map[string][]int     `json:"abstract_inverted_index"`
 }
 
 type openAlexAuthorship struct {
 	Author struct {
 		DisplayName string `json:"display_name"`
 	} `json:"author"`
-}
-
-func reconstructAbstract(index map[string][]int) string {
-	if index == nil {
-		return ""
-	}
-
-	type wordPos struct {
-		word string
-		pos  int
-	}
-	var pairs []wordPos
-	for word, positions := range index {
-		for _, pos := range positions {
-			pairs = append(pairs, wordPos{word, pos})
-		}
-	}
-	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].pos < pairs[j].pos
-	})
-
-	words := make([]string, len(pairs))
-	for i, p := range pairs {
-		words[i] = p.word
-	}
-	return strings.Join(words, " ")
 }
 
 func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.RawMessage) (string, error) {
@@ -164,14 +132,8 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 	if err := json.Unmarshal(input, &params); err != nil {
 		return toolError("invalid input: "+err.Error(), false), nil
 	}
-	if params.Query == "" {
-		return toolError("query is required", false), nil
-	}
 	if params.MaxResults <= 0 {
 		params.MaxResults = 10
-	}
-	if params.MaxResults > 50 {
-		params.MaxResults = 50
 	}
 
 	u := "https://api.openalex.org/works?search=" + url.QueryEscape(params.Query) +
@@ -183,27 +145,22 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return toolError("failed to create request: "+err.Error(), true), nil
+		return toolError("request creation failed: "+err.Error(), false), nil
 	}
 
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return toolError("request failed: "+err.Error(), true), nil
+		return toolError("OpenAlex request failed: "+err.Error(), true), nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return toolError(fmt.Sprintf("OpenAlex returned HTTP %d", resp.StatusCode), true), nil
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 5*1024*1024))
-	if err != nil {
-		return toolError("failed to read response: "+err.Error(), true), nil
+		return toolError(fmt.Sprintf("OpenAlex returned status %d", resp.StatusCode), true), nil
 	}
 
 	var oaResp openAlexResponse
-	if err := json.Unmarshal(body, &oaResp); err != nil {
-		return toolError("failed to parse JSON: "+err.Error(), true), nil
+	if err := json.NewDecoder(resp.Body).Decode(&oaResp); err != nil {
+		return toolError("failed to parse OpenAlex response: "+err.Error(), true), nil
 	}
 
 	results := make([]OpenAlexResult, 0, len(oaResp.Results))
@@ -223,4 +180,37 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 
 	b, _ := json.Marshal(results)
 	return string(b), nil
+}
+
+func reconstructAbstract(index map[string][]int) string {
+	if len(index) == 0 {
+		return ""
+	}
+
+	maxPos := 0
+	for _, positions := range index {
+		for _, pos := range positions {
+			if pos > maxPos {
+				maxPos = pos
+			}
+		}
+	}
+
+	words := make([]string, maxPos+1)
+	type wordPos struct {
+		word string
+		pos  int
+	}
+	var pairs []wordPos
+	for word, positions := range index {
+		for _, pos := range positions {
+			pairs = append(pairs, wordPos{word, pos})
+		}
+	}
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].pos < pairs[j].pos })
+	for _, p := range pairs {
+		words[p.pos] = p.word
+	}
+
+	return strings.Join(words, " ")
 }
