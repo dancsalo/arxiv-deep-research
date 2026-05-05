@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
@@ -29,15 +30,10 @@ func (a *sdkAdapter) CreateMessage(ctx context.Context, params anthropic.Message
 
 func main() {
 	query := flag.String("query", "retrieval augmented generation", "research topic")
-	model := flag.String("model", string(anthropic.ModelClaudeHaiku4_5), "model ID")
+	model := flag.String("model", "", "model ID override")
 	maxTurns := flag.Int("max-turns", 10, "maximum turns")
+	useBedrock := flag.Bool("bedrock", true, "use AWS Bedrock (default true)")
 	flag.Parse()
-
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintf(os.Stderr, "Error: ANTHROPIC_API_KEY environment variable is required\n")
-		os.Exit(1)
-	}
 
 	httpClient := &http.Client{Timeout: 30 * time.Second}
 	toolSet := research.NewResearchToolSet(httpClient)
@@ -75,7 +71,29 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	apiClient := anthropic.NewClient(option.WithAPIKey(apiKey))
+	ctx := context.Background()
+	var opts []option.RequestOption
+	if *useBedrock {
+		opts = append(opts, bedrock.WithLoadDefaultConfig(ctx))
+	} else {
+		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			fmt.Fprintf(os.Stderr, "Error: ANTHROPIC_API_KEY environment variable is required when not using Bedrock\n")
+			os.Exit(1)
+		}
+		opts = append(opts, option.WithAPIKey(apiKey))
+	}
+
+	var modelID anthropic.Model
+	if *model != "" {
+		modelID = anthropic.Model(*model)
+	} else if *useBedrock {
+		modelID = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+	} else {
+		modelID = anthropic.ModelClaudeHaiku4_5
+	}
+
+	apiClient := anthropic.NewClient(opts...)
 	loop := agentic.NewLoop(
 		&sdkAdapter{client: &apiClient},
 		manager,
@@ -84,7 +102,7 @@ func main() {
 		agentic.LoopConfig{
 			MaxTurns:        *maxTurns,
 			MaxCostUSD:      0.50,
-			Model:           anthropic.Model(*model),
+			Model:           modelID,
 			SessionID:       fmt.Sprintf("demo-%d", time.Now().UnixMilli()),
 			FinishTool:      "finish_loop",
 			DefaultPriority: ctxmgr.PriorityCore,
