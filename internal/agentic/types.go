@@ -3,6 +3,7 @@ package agentic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -146,6 +147,91 @@ func (l *Loop) addChildCost(cost float64) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.totalCostUSD += cost
+}
+
+type ChildConfig struct {
+	Query      string
+	MaxTurns   int
+	MaxCostUSD float64
+	Priority   ctxmgr.TurnPriority
+	Tools      *registry.ToolRegistry
+	System     []anthropic.TextBlockParam
+	Model      anthropic.Model
+}
+
+func (l *Loop) Spawn(cfg ChildConfig) (*Loop, error) {
+	nextDepth := l.depth + 1
+	if nextDepth >= l.cfg.MaxDepth {
+		return nil, fmt.Errorf("max recursion depth %d reached", l.cfg.MaxDepth)
+	}
+
+	tokensUsed := l.manager.EstimateAllTokens()
+	parentRemaining := l.manager.Budget().Remaining(tokensUsed)
+	childBudget := int(float64(parentRemaining) * 0.5)
+	if childBudget > 100_000 {
+		childBudget = 100_000
+	}
+
+	initialMsg := anthropic.NewUserMessage(anthropic.NewTextBlock(cfg.Query))
+	childManager := ctxmgr.NewContextManager(ctxmgr.ContextManagerConfig{
+		Estimator: l.manager.Estimator(),
+		Budget: &ctxmgr.ContextBudget{
+			ModelContextLimit: childBudget,
+			MaxOutputTokens:   8192,
+			SafetyMargin:      1000,
+		},
+	}, initialMsg)
+
+	if cc := l.manager.CompactionClient(); cc != nil {
+		childManager.SetCompactionClient(cc)
+	}
+
+	childReg := cfg.Tools
+	if childReg == nil {
+		childReg = registry.NewToolRegistry()
+	}
+	childReg.Register("finish_loop", BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
+		return string(input), nil
+	})
+
+	model := cfg.Model
+	if model == "" {
+		model = l.cfg.Model
+	}
+
+	system := cfg.System
+	if system == nil {
+		system = l.system
+	}
+
+	priority := cfg.Priority
+	if priority == 0 {
+		priority = ctxmgr.PriorityResearch
+	}
+
+	childLogger := l.logger.With("depth", nextDepth)
+
+	child := &Loop{
+		client:   l.client,
+		manager:  childManager,
+		registry: childReg,
+		recaller: nil,
+		cfg: LoopConfig{
+			MaxTurns:        cfg.MaxTurns,
+			MaxCostUSD:      cfg.MaxCostUSD,
+			MaxDepth:        l.cfg.MaxDepth,
+			Model:           model,
+			FinishTool:      "finish_loop",
+			DefaultPriority: priority,
+			Logger:          childLogger,
+		},
+		system: system,
+		hooks:  l.hooks,
+		logger: childLogger,
+		depth:  nextDepth,
+	}
+
+	return child, nil
 }
 
 // Backward-compatible aliases

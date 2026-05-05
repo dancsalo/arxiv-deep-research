@@ -83,6 +83,14 @@ func (m *ContextManager) Budget() *ContextBudget {
 	return m.budget
 }
 
+func (m *ContextManager) Estimator() *TokenEstimator {
+	return m.estimator
+}
+
+func (m *ContextManager) CompactionClient() CompactionClient {
+	return m.compactionClient
+}
+
 func (m *ContextManager) GetTokenCount(ctx context.Context) (int, error) {
 	now := m.nowFunc()
 	if !m.cached.dirty && now.Sub(m.cached.countedAt) < 30*time.Second {
