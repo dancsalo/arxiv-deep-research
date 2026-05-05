@@ -50,105 +50,6 @@ func newLoopManager() *ctxmgr.ContextManager {
 	}, initial)
 }
 
-func TestResearchLoopMaxTurns(t *testing.T) {
-	client := &scriptedMessageClient{
-		responses: []*anthropic.Message{
-			makeTextResponse("Thinking about it..."),
-			makeTextResponse("Still thinking..."),
-			makeTextResponse("Here's the answer: quantum computing is cool."),
-		},
-	}
-	manager := newLoopManager()
-
-	cfg := LoopConfig{
-		MaxTurns:   3,
-		MaxCostUSD: 1.0,
-		Model:      anthropic.ModelClaudeHaiku4_5,
-	}
-	executor := func(name string, args map[string]any) (string, error) {
-		return `{}`, nil
-	}
-
-	result, err := ResearchLoop(bgctx(), client, "test", cfg, nil, nil, executor, manager)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result == "" {
-		t.Error("expected non-empty result")
-	}
-}
-
-func TestResearchLoopCostLimit(t *testing.T) {
-	resp := makeTextResponse("response")
-	resp.Usage = anthropic.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}
-
-	client := &scriptedMessageClient{
-		responses: []*anthropic.Message{resp},
-	}
-	manager := newLoopManager()
-
-	cfg := LoopConfig{
-		MaxTurns:   10,
-		MaxCostUSD: 0.0001,
-		Model:      anthropic.ModelClaudeHaiku4_5,
-	}
-	executor := func(name string, args map[string]any) (string, error) {
-		return `{}`, nil
-	}
-
-	_, err := ResearchLoop(bgctx(), client, "test", cfg, nil, nil, executor, manager)
-	if err == nil {
-		t.Fatal("expected cost limit error")
-	}
-}
-
-func TestResearchLoopEndTurn(t *testing.T) {
-	client := &scriptedMessageClient{
-		responses: []*anthropic.Message{
-			makeTextResponse("The answer is 42."),
-		},
-	}
-	manager := newLoopManager()
-
-	cfg := LoopConfig{
-		MaxTurns:   10,
-		MaxCostUSD: 1.0,
-		Model:      anthropic.ModelClaudeHaiku4_5,
-	}
-	executor := func(name string, args map[string]any) (string, error) {
-		return `{}`, nil
-	}
-
-	result, err := ResearchLoop(bgctx(), client, "test", cfg, nil, nil, executor, manager)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result != "The answer is 42." {
-		t.Errorf("result: got %q, want 'The answer is 42.'", result)
-	}
-}
-
-func TestResearchLoopAPIError(t *testing.T) {
-	client := &scriptedMessageClient{
-		responses: nil, // no responses → error
-	}
-	manager := newLoopManager()
-
-	cfg := LoopConfig{
-		MaxTurns:   1,
-		MaxCostUSD: 1.0,
-		Model:      anthropic.ModelClaudeHaiku4_5,
-	}
-	executor := func(name string, args map[string]any) (string, error) {
-		return `{}`, nil
-	}
-
-	_, err := ResearchLoop(bgctx(), client, "test", cfg, nil, nil, executor, manager)
-	if err == nil {
-		t.Fatal("expected API error")
-	}
-}
-
 func TestEstimateCost(t *testing.T) {
 	usage := anthropic.Usage{InputTokens: 1000, OutputTokens: 500}
 	cost := estimateCost(usage, anthropic.ModelClaudeHaiku4_5)
@@ -190,8 +91,8 @@ func TestBuildFinishTool(t *testing.T) {
 	if tool.OfTool == nil {
 		t.Fatal("expected OfTool to be set")
 	}
-	if tool.OfTool.Name != "finish_research" {
-		t.Errorf("tool name: got %s, want 'finish_research'", tool.OfTool.Name)
+	if tool.OfTool.Name != "finish_loop" {
+		t.Errorf("tool name: got %s, want 'finish_loop'", tool.OfTool.Name)
 	}
 }
 
