@@ -118,7 +118,7 @@ func main() {
 		systemBlocks,
 	)
 
-	start := time.Now()
+	start = time.Now()
 	result, err := loop.Run(context.Background(), *query)
 	elapsed := time.Since(start)
 
