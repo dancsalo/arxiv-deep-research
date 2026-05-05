@@ -48,12 +48,12 @@ func injectMemories(messages []anthropic.MessageParam, block string) []anthropic
 	return copied
 }
 
-func (a *AgenticLoop) filterNewMemories(memories []RecalledMemory) []RecalledMemory {
+func (l *Loop) filterNewMemories(memories []RecalledMemory) []RecalledMemory {
 	var filtered []RecalledMemory
 	for _, m := range memories {
-		if !a.seenMemoryIDs[m.ID] {
+		if !l.seenMemoryIDs[m.ID] {
 			filtered = append(filtered, m)
-			a.seenMemoryIDs[m.ID] = true
+			l.seenMemoryIDs[m.ID] = true
 		}
 	}
 	return filtered

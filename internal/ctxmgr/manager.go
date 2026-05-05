@@ -192,6 +192,10 @@ func (m *ContextManager) EstimateText(text string, ct ContentType) int {
 	return m.estimator.EstimateFast(text, ct)
 }
 
+func (m *ContextManager) ExtractInitialQuery() string {
+	return m.extractMessageText(m.log.initialUserMessage)
+}
+
 func (m *ContextManager) ExtractFinalAnswer() string {
 	if m.log.Len() == 0 {
 		return ""
