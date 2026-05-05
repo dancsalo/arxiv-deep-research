@@ -127,7 +127,7 @@ func reduceToolArgs(toolName string, args map[string]any, remainingTokens int) (
 		}
 		reduced["max_chars"] = maxChars
 		return reduced, true
-	case "search_arxiv":
+	case "search_arxiv", "search_openalex":
 		if v, ok := args["max_results"]; ok {
 			switch n := v.(type) {
 			case float64:
