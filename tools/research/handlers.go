@@ -8,9 +8,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type ArxivResult struct {
@@ -213,4 +215,117 @@ func reconstructAbstract(index map[string][]int) string {
 	}
 
 	return strings.Join(words, " ")
+}
+
+type ArxivPdfResult struct {
+	ArxivID string `json:"arxiv_id"`
+	PdfURL  string `json:"pdf_url"`
+	Version string `json:"version,omitempty"`
+}
+
+func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.RawMessage) (string, error) {
+	// Parse and validate input
+	var params struct {
+		ArxivID string `json:"arxiv_id"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return toolError("invalid input: "+err.Error(), false), nil
+	}
+	if params.ArxivID == "" {
+		return toolError("arxiv_id is required", false), nil
+	}
+
+	// Normalize and validate arXiv ID
+	normalized, version, err := normalizeArxivID(params.ArxivID)
+	if err != nil {
+		return toolError("invalid arXiv ID format: "+err.Error(), false), nil
+	}
+
+	// Construct PDF URL
+	pdfURL := fmt.Sprintf("https://export.arxiv.org/pdf/%s.pdf", normalized)
+
+	// Validate URL (HEAD request to check existence)
+	if err := validateArxivPdf(ctx, r.client, pdfURL); err != nil {
+		return toolError("PDF not found: "+err.Error(), true), nil
+	}
+
+	// Return result
+	result := ArxivPdfResult{
+		ArxivID: normalized,
+		PdfURL:  pdfURL,
+		Version: version,
+	}
+	b, _ := json.Marshal(result)
+	return string(b), nil
+}
+
+func normalizeArxivID(id string) (normalized string, version string, err error) {
+	// Strip common prefixes and whitespace
+	id = strings.TrimSpace(id)
+	id = strings.TrimPrefix(id, "arXiv:")
+	id = strings.TrimPrefix(id, "http://arxiv.org/abs/")
+	id = strings.TrimPrefix(id, "https://arxiv.org/abs/")
+
+	// Extract version suffix (v1, v2, etc.) - must be at end and followed by digits
+	version = ""
+	versionRegex := regexp.MustCompile(`v\d+$`)
+	if match := versionRegex.FindString(id); match != "" {
+		version = match
+		id = strings.TrimSuffix(id, match)
+	}
+
+	// Validate format
+	// New format: YYMM.NNNNN (4 digits + period + 4-5 digits)
+	newFormatRegex := regexp.MustCompile(`^\d{4}\.\d{4,5}$`)
+	// Old format: category/YYMMNNN (e.g., astro-ph/9901234)
+	oldFormatRegex := regexp.MustCompile(`^[a-z\-]+/\d{7}$`)
+
+	if !newFormatRegex.MatchString(id) && !oldFormatRegex.MatchString(id) {
+		return "", "", fmt.Errorf("invalid arXiv ID format: %s", id)
+	}
+
+	return id, version, nil
+}
+
+func validateArxivPdf(ctx context.Context, client *http.Client, pdfURL string) error {
+	// Configure client with timeout and redirect checking
+	// Use the provided client's transport but add our own CheckRedirect
+	clientWithRedirectCheck := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: client.Transport, // Use provided transport (important for tests)
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Validate redirect target is still arxiv.org domain
+			if !strings.Contains(req.URL.Host, "arxiv.org") {
+				return fmt.Errorf("suspicious redirect to: %s", req.URL.String())
+			}
+			// Allow up to 3 redirects
+			if len(via) >= 3 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
+	}
+
+	// Send HEAD request with timeout
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, http.MethodHead, pdfURL, nil)
+	req.Header.Set("User-Agent", "arxiv-deep-research/1.0")
+
+	resp, err := clientWithRedirectCheck.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Check final status after following redirects
+	if resp.StatusCode != 200 && resp.StatusCode != 301 && resp.StatusCode != 302 {
+		if resp.StatusCode == 404 {
+			return fmt.Errorf("paper not found")
+		}
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	return nil
 }

@@ -18,6 +18,7 @@ func NewResearchToolSet(client *http.Client) *ResearchToolSet {
 func (r *ResearchToolSet) Register(reg *registry.ToolRegistry) {
 	reg.Register("search_arxiv", BuildSearchArxivTool(), r.handleSearchArxiv)
 	reg.Register("search_openalex", BuildSearchOpenAlexTool(), r.handleSearchOpenAlex)
+	reg.Register("fetch_arxiv_pdf", BuildFetchArxivPdfTool(), r.handleFetchArxivPdf)
 }
 
 func toolError(msg string, recoverable bool) string {

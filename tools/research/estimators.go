@@ -16,5 +16,8 @@ func ResearchToolEstimators() map[string]func(args map[string]any) int {
 			}
 			return 50 + n*350
 		},
+		"fetch_arxiv_pdf": func(args map[string]any) int {
+			return 100 // Fixed cost: just returns URL (small JSON response)
+		},
 	}
 }
