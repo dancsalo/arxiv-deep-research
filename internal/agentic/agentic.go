@@ -113,11 +113,23 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 					if err := json.Unmarshal(toolInput, &parsed); err == nil && parsed.Summary != "" {
 						finishResult = parsed.Summary
 					}
+					if l.hooks.OnToolCall != nil {
+						if err := l.hooks.OnToolCall(ctx, toolName, toolInput, state); err != nil {
+							l.logger.Warn("hook.error", "hook", "OnToolCall", "err", err)
+						}
+					}
 					result, execErr := l.registry.Execute(ctx, toolName, toolInput)
+					if l.hooks.OnToolResult != nil {
+						if err := l.hooks.OnToolResult(ctx, toolName, result, state); err != nil {
+							l.logger.Warn("hook.error", "hook", "OnToolResult", "err", err)
+						}
+					}
 					if execErr != nil {
+						l.logger.Warn("tool.error", "turn", l.turnIndex, "tool", toolName, "error", execErr.Error())
 						toolResults = append(toolResults,
 							anthropic.NewToolResultBlock(toolID, fmt.Sprintf("error: %v", execErr), true))
 					} else {
+						l.logger.Info("tool.execute", "turn", l.turnIndex, "tool", toolName, "latency_ms", 0)
 						toolResults = append(toolResults,
 							anthropic.NewToolResultBlock(toolID, result, false))
 						toolResultTexts[toolName] = result
@@ -160,7 +172,7 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 				latency := time.Since(start).Milliseconds()
 
 				if execErr != nil {
-					l.logger.Warn("tool.unknown", "tool", toolName)
+					l.logger.Warn("tool.error", "turn", l.turnIndex, "tool", toolName, "error", execErr.Error())
 					toolResults = append(toolResults,
 						anthropic.NewToolResultBlock(toolID, fmt.Sprintf("error: %v", execErr), true))
 				} else {

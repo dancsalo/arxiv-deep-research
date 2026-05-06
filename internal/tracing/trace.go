@@ -1,6 +1,7 @@
 package tracing
 
 import (
+	"encoding/json"
 	"log/slog"
 	"time"
 )
@@ -42,10 +43,12 @@ type LLMCall struct {
 }
 
 type ToolCall struct {
-	Name         string `json:"name"`
-	InputLength  int    `json:"input_length"`
-	ResultLength int    `json:"result_length"`
-	DurationMs   int64  `json:"duration_ms"`
+	Name         string          `json:"name"`
+	Input        json.RawMessage `json:"input"`
+	Output       json.RawMessage `json:"output,omitempty"`
+	InputLength  int             `json:"input_length"`
+	ResultLength int             `json:"result_length"`
+	DurationMs   int64           `json:"duration_ms"`
 }
 
 type Config struct {
