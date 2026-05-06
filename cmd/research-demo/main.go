@@ -62,20 +62,19 @@ func main() {
 	}
 
 	reg := registry.NewToolRegistry()
-	reg.Register("finish_loop", agentic.BuildFinishTool(),
-		func(_ context.Context, input json.RawMessage) (string, error) {
-			return string(input), nil
-		})
+	registry.RegisterToolSets(reg, toolSet)
+	reg.Register("finish_loop", agentic.BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
+		return string(input), nil
+	})
 
 	systemBlocks := []anthropic.TextBlockParam{
-		{Text: "You are a research assistant. Search arXiv for preprints and OpenAlex for published works " +
-			"to find relevant papers on the given topic. Search both sources, then synthesize a summary " +
-			"with the most important findings. Include paper titles and authors in your summary. " +
-			"Do not call search_arxiv more than once. " +
-			"Call finish_loop with your final markdown summary when done.", Type: "text"},
+		{Text: "You are a research assistant. Search arXiv for preprints and OpenAlex for published works to find relevant papers on the given topic. Search both sources, then synthesize a summary with the most important findings. Include paper titles and authors in your summary.\nDo not call search_arxiv more than once.\nCall finish_loop with your final markdown summary when done.", Type: "text"},
 	}
 
-	initialMsg := anthropic.NewUserMessage(anthropic.NewTextBlock(*query))
+	initialMsg := anthropic.NewUserMessage(anthropic.NewTextBlock(
+		fmt.Sprintf("Find and summarize recent research on: %s", *query),
+	))
+
 	manager := ctxmgr.NewContextManager(ctxmgr.ContextManagerConfig{
 		Estimator: ctxmgr.NewTokenEstimator(nil, "", false),
 		Budget: &ctxmgr.ContextBudget{
@@ -94,7 +93,7 @@ func main() {
 		nil,
 		agentic.LoopConfig{
 			MaxTurns:        *maxTurns,
-			MaxCostUSD:      0.25,
+			MaxCostUSD:      0.50,
 			Model:           anthropic.Model(*model),
 			SessionID:       sessionID,
 			FinishTool:      "finish_loop",
@@ -105,25 +104,19 @@ func main() {
 		systemBlocks,
 	)
 
-	result, err := loop.Run(ctx, *query)
+	start = time.Now()
+	result, err := loop.Run(context.Background(), *query)
 	elapsed := time.Since(start)
 
 	if err != nil {
-		recorder.SetError(err)
-	}
-	if flushErr := recorder.Flush(); flushErr != nil {
-		logger.Error("failed to flush trace", "err", flushErr)
-	}
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("\n=== Research Summary ===")
+	fmt.Println("=== Research Summary ===")
 	fmt.Println(result)
-	fmt.Printf("\n--- Stats ---\n")
+	fmt.Println()
+	fmt.Printf("--- Stats ---\n")
 	fmt.Printf("Elapsed: %s\n", elapsed.Round(time.Millisecond))
-	fmt.Printf("Query: %s\n", *query)
-	fmt.Printf("Model: %s\n", *model)
+	fmt.Printf("Cost:    $%.4f\n", loop.TotalCost())
 }
