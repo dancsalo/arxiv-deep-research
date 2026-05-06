@@ -6,16 +6,19 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
 	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
 	"github.com/dancsalo/arxiv-deep-research/internal/registry"
 	"github.com/dancsalo/arxiv-deep-research/internal/tracing"
+	"github.com/dancsalo/arxiv-deep-research/tools/research"
 )
 
 type sdkAdapter struct {
@@ -28,21 +31,34 @@ func (a *sdkAdapter) CreateMessage(ctx context.Context, params anthropic.Message
 
 func main() {
 	query := flag.String("query", "retrieval augmented generation", "research query")
-	model := flag.String("model", string(anthropic.ModelClaudeHaiku4_5), "model ID")
+	model := flag.String("model", "", "model ID override")
 	maxTurns := flag.Int("max-turns", 10, "maximum agentic loop turns")
 	traceDir := flag.String("trace-dir", ".traces", "directory for trace files (empty to disable)")
+	useBedrock := flag.Bool("bedrock", true, "use AWS Bedrock")
 	flag.Parse()
 
-	apiKey := os.Getenv("ANTHROPIC_API_KEY")
-	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "error: ANTHROPIC_API_KEY environment variable is required")
-		os.Exit(1)
-	}
-
-	start := time.Now()
 	ctx := context.Background()
+	var opts []option.RequestOption
+	if *useBedrock {
+		opts = append(opts, bedrock.WithLoadDefaultConfig(ctx))
+	} else {
+		apiKey := os.Getenv("ANTHROPIC_API_KEY")
+		if apiKey == "" {
+			fmt.Fprintln(os.Stderr, "error: ANTHROPIC_API_KEY environment variable is required")
+			os.Exit(1)
+		}
+		opts = append(opts, option.WithAPIKey(apiKey))
+	}
+	apiClient := anthropic.NewClient(opts...)
 
-	apiClient := anthropic.NewClient(option.WithAPIKey(apiKey))
+	var modelID anthropic.Model
+	if *model != "" {
+		modelID = anthropic.Model(*model)
+	} else if *useBedrock {
+		modelID = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+	} else {
+		modelID = anthropic.ModelClaudeHaiku4_5
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
@@ -51,7 +67,7 @@ func main() {
 		Dir:       *traceDir,
 		SessionID: sessionID,
 		Query:     *query,
-		Model:     *model,
+		Model:     string(modelID),
 		Logger:    logger,
 	}
 	hooks, recorder := tracing.NewTracingHooks(traceCfg)
@@ -61,8 +77,11 @@ func main() {
 		client = &tracing.TracedClient{Inner: client, Recorder: recorder}
 	}
 
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	researchTools := research.NewResearchToolSet(httpClient)
+
 	reg := registry.NewToolRegistry()
-	registry.RegisterToolSets(reg, toolSet)
+	registry.RegisterToolSets(reg, researchTools)
 	reg.Register("finish_loop", agentic.BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
 		return string(input), nil
 	})
@@ -94,7 +113,7 @@ func main() {
 		agentic.LoopConfig{
 			MaxTurns:        *maxTurns,
 			MaxCostUSD:      0.50,
-			Model:           anthropic.Model(*model),
+			Model:           modelID,
 			SessionID:       sessionID,
 			FinishTool:      "finish_loop",
 			DefaultPriority: ctxmgr.PriorityCore,
@@ -104,13 +123,21 @@ func main() {
 		systemBlocks,
 	)
 
-	start = time.Now()
+	start := time.Now()
 	result, err := loop.Run(context.Background(), *query)
 	elapsed := time.Since(start)
 
 	if err != nil {
+		recorder.SetError(err)
+		if flushErr := recorder.Flush(); flushErr != nil {
+			logger.Error("failed to flush trace", "err", flushErr)
+		}
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
+	}
+
+	if err := recorder.Flush(); err != nil {
+		logger.Error("failed to flush trace", "err", err)
 	}
 
 	fmt.Println("=== Research Summary ===")
@@ -119,4 +146,7 @@ func main() {
 	fmt.Printf("--- Stats ---\n")
 	fmt.Printf("Elapsed: %s\n", elapsed.Round(time.Millisecond))
 	fmt.Printf("Cost:    $%.4f\n", loop.TotalCost())
+	if traceCfg.Enabled() {
+		fmt.Printf("Trace:   %s/%s.json\n", traceCfg.Dir, sessionID)
+	}
 }

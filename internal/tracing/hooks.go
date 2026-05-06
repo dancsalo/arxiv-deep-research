@@ -67,6 +67,7 @@ func (r *Recorder) onToolCall(_ context.Context, toolName string, input json.Raw
 		idx := len(r.currentTurn.ToolCalls)
 		r.currentTurn.ToolCalls = append(r.currentTurn.ToolCalls, ToolCall{
 			Name:        toolName,
+			Input:       input,
 			InputLength: len(input),
 		})
 		r.toolStartStack = append(r.toolStartStack, time.Now())
@@ -90,6 +91,22 @@ func (r *Recorder) onToolResult(_ context.Context, _ string, result string, _ ag
 	if idx < len(r.currentTurn.ToolCalls) {
 		r.currentTurn.ToolCalls[idx].DurationMs = time.Since(startTime).Milliseconds()
 		r.currentTurn.ToolCalls[idx].ResultLength = len(result)
+
+		// Try to parse result as JSON; if it fails, wrap it as a JSON string
+		var outputJSON json.RawMessage
+		if json.Valid([]byte(result)) {
+			outputJSON = json.RawMessage(result)
+		} else {
+			// Wrap the result as a JSON string
+			wrapped, err := json.Marshal(result)
+			if err != nil {
+				// Fallback: use the raw string as-is
+				outputJSON = json.RawMessage(result)
+			} else {
+				outputJSON = wrapped
+			}
+		}
+		r.currentTurn.ToolCalls[idx].Output = outputJSON
 	}
 	return nil
 }
