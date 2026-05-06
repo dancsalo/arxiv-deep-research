@@ -14,7 +14,7 @@ import (
 //go:embed static/index.html
 var staticFS embed.FS
 
-type LoopFactory func(query string, logger *slog.Logger) (*agentic.Loop, error)
+type LoopFactory func(query string, logger *slog.Logger) (loop *agentic.Loop, cleanup func(), err error)
 
 type Server struct {
 	factory LoopFactory
@@ -84,10 +84,13 @@ func (s *Server) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger := slog.New(sseHandler)
-	loop, err := s.factory(req.Query, logger)
+	loop, cleanup, err := s.factory(req.Query, logger)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("loop construction failed: %v", err), http.StatusInternalServerError)
 		return
+	}
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
