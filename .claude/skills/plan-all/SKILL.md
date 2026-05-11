@@ -8,6 +8,27 @@ user_invocable: true
 
 When the user invokes this skill (e.g. `/plan-all`, "plan everything", "full plan pipeline"), run the entire planning workflow autonomously from start to finish. **Do NOT stop to ask the user questions at any point.** Make reasonable decisions and document them. The user will review the PR at the end.
 
+## Overview
+
+This is **Phase 1** of the two-phase development workflow: **planning** then **coding**. Iterate until the plan is solid, then commit it. This skill runs the full pipeline autonomously, or you can invoke each step manually.
+
+The pipeline:
+```
+plan-begin → [ plan-critique + plan-critique-pm ] → plan-revise → (x 2 rounds) → plan-tests → plan-finish
+```
+
+Steps:
+1. **plan-begin** — write an implementation plan with requirements, specs, and contracts. Saved to `.claude/plans/`.
+2. **Dual critique** (run as parallel subagents):
+   - **plan-critique** — grumpy staff-engineer review. Questions feasibility, completeness, and coherence.
+   - **plan-critique-pm** — product manager review. Questions user value, scope, and priorities.
+3. **plan-revise** — address feedback from both critiques: fix gaps, correct errors, resolve scope and design issues.
+4. Repeat steps 2-3 for a second round.
+5. **plan-tests** — generate a test plan from the implementation plan (what to test, inputs/outputs, verification strategy).
+6. **plan-finish** — commit the plan to git, push to a feature branch, and open a PR for review.
+
+**plan-all** orchestrates steps 1-6 end-to-end without stopping for user input.
+
 ## Pipeline
 
 ```

@@ -1,9 +1,33 @@
-.PHONY: build vet lint test test-go test-race test-python check run-server trace-list trace-show trace-errors
+.PHONY: build build-research build-tools vet lint test test-go test-race check run trace-list trace-show trace-errors help
 
-PYTHON_TEST_DIRS := services/embedding-api
+help: ## Show this help
+	@echo "arXiv Deep Research - Research Agent"
+	@echo ""
+	@echo "Main commands:"
+	@echo "  make run              Run research-demo with prompt variant A"
+	@echo "  make build            Build all binaries"
+	@echo "  make check            Run all checks (lint, build, test)"
+	@echo ""
+	@echo "Build commands:"
+	@echo "  make build-research   Build research-demo binary"
+	@echo "  make build-tools      Build tools-cli binary"
+	@echo ""
+	@echo "Test commands:"
+	@echo "  make test             Run all tests"
+	@echo "  make test-race        Run tests with race detector"
+	@echo ""
+	@echo "Trace commands:"
+	@echo "  make trace-list       List recent trace files"
+	@echo "  make trace-show       Show trace: make trace-show RUN=<session_id>"
+	@echo "  make trace-errors     Show failed traces"
 
-build:
-	go build ./...
+build: build-research build-tools ## Build all binaries
+
+build-research: ## Build research-demo binary
+	go build -o research-demo ./cmd/research-demo
+
+build-tools: ## Build tools-cli binary
+	go build -o tools-cli ./cmd/tools-cli
 
 vet:
 	go vet ./...
@@ -16,24 +40,13 @@ test-go:
 test-race:
 	go test -race ./... -count=1
 
-test-python:
-	@if ! python -m pytest --version >/dev/null 2>&1; then \
-		echo "pytest not found — install with: pip install -r services/embedding-api/requirements.txt pytest"; \
-		exit 1; \
-	fi
-	@for d in $(PYTHON_TEST_DIRS); do echo "==> pytest $$d"; (cd $$d && python -m pytest -v); done
-
 test: test-go
-	@if python -m pytest --version >/dev/null 2>&1; then \
-		$(MAKE) test-python; \
-	else \
-		echo "==> skipping Python tests (pytest not installed)"; \
-	fi
 
 check: lint build test
 
-run-server:
-	go run ./cmd/server/
+run: build-research ## Run research-demo with default query
+	@echo "Running research-demo (variant A)..."
+	@./research-demo --query "transformer attention mechanisms" --prompt-variant A --max-turns 12
 
 TRACE_DIR ?= .traces
 
