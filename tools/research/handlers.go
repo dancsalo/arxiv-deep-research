@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -275,7 +276,16 @@ func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.Ra
 	pdfURL := fmt.Sprintf("https://export.arxiv.org/pdf/%s.pdf", normalized)
 
 	// Validate URL (HEAD request to check existence)
-	if err := validateArxivPdf(ctx, r.client, pdfURL); err != nil {
+	// Convert httpClient interface to *http.Client for validateArxivPdf
+	// validateArxivPdf needs *http.Client to access Transport field
+	var concreteClient *http.Client
+	if c, ok := r.client.(*http.Client); ok {
+		concreteClient = c
+	} else {
+		// For test mocks without Transport, create a default client
+		concreteClient = &http.Client{Timeout: 10 * time.Second}
+	}
+	if err := validateArxivPdf(ctx, concreteClient, pdfURL); err != nil {
 		return toolError("PDF not found: "+err.Error(), true), nil
 	}
 
@@ -358,6 +368,212 @@ func validateArxivPdf(ctx context.Context, client *http.Client, pdfURL string) e
 	}
 
 	return nil
+}
+
+// GitHub search result types
+type GitHubRepoResult struct {
+	Name        string   `json:"name"`
+	FullName    string   `json:"full_name"`
+	Description string   `json:"description"`
+	Stars       int      `json:"stars"`
+	URL         string   `json:"url"`
+	Language    string   `json:"language"`
+	License     string   `json:"license"`
+	Topics      []string `json:"topics"`
+	UpdatedAt   string   `json:"updated_at"`
+	IsArchived  bool     `json:"is_archived"`
+}
+
+type githubSearchResponse struct {
+	TotalCount        int              `json:"total_count"`
+	IncompleteResults bool             `json:"incomplete_results"`
+	Items             []githubRepoItem `json:"items"`
+}
+
+type githubRepoItem struct {
+	Name        string             `json:"name"`
+	FullName    string             `json:"full_name"`
+	Description string             `json:"description"`
+	HTMLURL     string             `json:"html_url"`
+	Stars       int                `json:"stargazers_count"`
+	Language    string             `json:"language"`
+	License     *githubLicenseInfo `json:"license"`
+	Topics      []string           `json:"topics"`
+	UpdatedAt   string             `json:"updated_at"`
+	Archived    bool               `json:"archived"`
+}
+
+type githubLicenseInfo struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+func (r *ResearchToolSet) handleSearchGithub(ctx context.Context, input json.RawMessage) (string, error) {
+	var params struct {
+		Query      string `json:"query"`
+		MaxResults int    `json:"max_results"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return toolError("invalid input: "+err.Error(), false), nil
+	}
+	if params.Query == "" {
+		return toolError("query is required", false), nil
+	}
+	if params.MaxResults <= 0 {
+		params.MaxResults = 5
+	}
+	// Cap at 5 results to limit token usage and response size per product decision
+	// (see plan: phase 1 scoped to 5 results for MVP validation)
+	if params.MaxResults > 5 {
+		params.MaxResults = 5
+	}
+
+	// Add quality filters to query: min 100 stars, updated in last 2 years
+	// Calculate 2 years ago dynamically to maintain recency invariant
+	twoYearsAgo := time.Now().AddDate(-2, 0, 0).Format("2006-01-02")
+	enhancedQuery := fmt.Sprintf("%s stars:>100 pushed:>%s", params.Query, twoYearsAgo)
+
+	// Build GitHub API search URL
+	apiURL := fmt.Sprintf("%s/search/repositories?q=%s&sort=stars&order=desc&per_page=%d",
+		r.baseURL, url.QueryEscape(enhancedQuery), params.MaxResults)
+
+	return r.executeGithubSearch(ctx, apiURL, params.Query)
+}
+
+func (r *ResearchToolSet) executeGithubSearch(ctx context.Context, apiURL, originalQuery string) (string, error) {
+	// Create request
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return toolError(fmt.Sprintf("request creation failed for query '%s': %s", originalQuery, err.Error()), false), nil
+	}
+
+	// Use current stable API version
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Set("User-Agent", "arxiv-deep-research (github.com/dancsalo/arxiv-deep-research)")
+
+	// Execute request with retry logic
+	var resp *http.Response
+	maxRetries := 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		resp, err = r.client.Do(req)
+		if err != nil {
+			if attempt < maxRetries {
+				time.Sleep(time.Duration(attempt+1) * time.Second)
+				continue
+			}
+			return toolError(fmt.Sprintf("GitHub API request failed for query '%s': %s", originalQuery, err.Error()), true), nil
+		}
+
+		// Retry on 5xx errors
+		if resp.StatusCode >= 500 && resp.StatusCode < 600 && attempt < maxRetries {
+			resp.Body.Close()
+			time.Sleep(time.Duration(attempt+1) * time.Second)
+			continue
+		}
+		break
+	}
+	defer resp.Body.Close()
+
+	// Check rate limit headers proactively for monitoring
+	rateLimitRemaining := resp.Header.Get("X-RateLimit-Remaining")
+	rateLimitReset := resp.Header.Get("X-RateLimit-Reset")
+
+	// Log rate limit info for operational visibility
+	log.Printf("[GitHub API] rate_limit_remaining=%s rate_limit_reset_unix=%s query=%q",
+		rateLimitRemaining, rateLimitReset, originalQuery)
+
+	// Handle rate limiting
+	if resp.StatusCode == 403 || resp.StatusCode == 429 {
+		// Check for Retry-After header first (secondary rate limit or explicit retry)
+		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+			// Retry-After can be seconds (integer) or HTTP date
+			if seconds, err := strconv.Atoi(retryAfter); err == nil {
+				retryTime := time.Now().Add(time.Duration(seconds) * time.Second)
+				return toolError(fmt.Sprintf("GitHub API rate limit hit. Retry after %d seconds (at %s).",
+					seconds, retryTime.Format(time.RFC3339)), true), nil
+			}
+			// Fall back to displaying raw value if not an integer
+			return toolError(fmt.Sprintf("GitHub API rate limit hit. Retry after: %s", retryAfter), true), nil
+		}
+
+		// Check primary rate limit
+		if rateLimitRemaining == "0" {
+			// Parse Unix timestamp and format for human readability
+			resetUnix, parseErr := strconv.ParseInt(rateLimitReset, 10, 64)
+			if parseErr != nil {
+				return toolError(fmt.Sprintf("GitHub API rate limit exceeded. Reset time unparseable: %s", rateLimitReset), true), nil
+			}
+			resetTime := time.Unix(resetUnix, 0)
+			minutesUntilReset := int(time.Until(resetTime).Minutes())
+			return toolError(fmt.Sprintf("GitHub API rate limit exceeded (60/hr unauthenticated). Resets at %s (in ~%d minutes).",
+				resetTime.Format(time.RFC3339), minutesUntilReset), true), nil
+		}
+
+		// Rate limit response but no clear reason
+		return toolError(fmt.Sprintf("GitHub API rate limit response (status %d) but limit headers unclear", resp.StatusCode), true), nil
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return toolError(fmt.Sprintf("GitHub API returned status %d for query '%s': %s", resp.StatusCode, originalQuery, string(bodyBytes)), true), nil
+	}
+
+	// Parse response
+	var ghResp githubSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&ghResp); err != nil {
+		return toolError(fmt.Sprintf("failed to parse GitHub response for query '%s': %s", originalQuery, err.Error()), true), nil
+	}
+
+	// Convert to our result format, filtering archived repos
+	results := make([]GitHubRepoResult, 0, len(ghResp.Items))
+	for _, item := range ghResp.Items {
+		if item.Archived {
+			continue
+		}
+
+		licenseName := "Unknown"
+		if item.License != nil && item.License.Name != "" {
+			licenseName = item.License.Name
+		}
+
+		desc := item.Description
+		if desc == "" {
+			desc = "(No description provided)"
+		}
+
+		lang := item.Language
+		if lang == "" {
+			lang = "Unknown"
+		}
+
+		// Handle nil Topics slice
+		topics := item.Topics
+		if topics == nil {
+			topics = []string{}
+		}
+
+		results = append(results, GitHubRepoResult{
+			Name:        item.Name,
+			FullName:    item.FullName,
+			Description: desc,
+			Stars:       item.Stars,
+			URL:         item.HTMLURL,
+			Language:    lang,
+			License:     licenseName,
+			Topics:      topics,
+			UpdatedAt:   item.UpdatedAt,
+			IsArchived:  false, // already filtered
+		})
+	}
+
+	b, err := json.Marshal(results)
+	if err != nil {
+		// Marshaling should never fail for our controlled structs, but handle defensively
+		log.Printf("[ERROR] Failed to marshal GitHub results for query %q: %v", originalQuery, err)
+		return toolError(fmt.Sprintf("internal error: failed to serialize results for query '%s'", originalQuery), false), nil
+	}
+	return string(b), nil
 }
 
 type WebSearchResult struct {

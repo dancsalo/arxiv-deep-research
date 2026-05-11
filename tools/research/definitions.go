@@ -80,6 +80,30 @@ func BuildFetchArxivPdfTool() anthropic.ToolUnionParam {
 	return t
 }
 
+func BuildSearchGithubTool() anthropic.ToolUnionParam {
+	t := anthropic.ToolUnionParamOfTool(
+		anthropic.ToolInputSchemaParam{
+			Type: "object",
+			Properties: map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Search query for GitHub repositories. Supports GitHub search syntax: 'transformer language:python stars:>100 pushed:>2023-01-01'. Examples: 'attention mechanism implementation', 'diffusion model pytorch'.",
+				},
+				"max_results": map[string]any{
+					"type":        "integer",
+					"description": "Maximum number of results to return (default 5, max 5)",
+				},
+			},
+			Required: []string{"query"},
+		},
+		"search_github_repos",
+	)
+	t.OfTool.Description = anthropic.String(
+		"Search GitHub repositories for code implementations, sorted by stars. IMPORTANT: Results are automatically filtered to show only popular, actively-maintained repos (>100 stars, updated within 2 years, not archived). Returns repository name, description, star count, language, license, topics, last updated, and URL. Use when user asks for established, production-ready implementations or popular GitHub repos. NOT suitable for finding experimental, niche, or small projects.",
+	)
+	return t
+}
+
 func BuildSearchWebTool() anthropic.ToolUnionParam {
 	t := anthropic.ToolUnionParamOfTool(
 		anthropic.ToolInputSchemaParam{
