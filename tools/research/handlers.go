@@ -14,7 +14,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/html"
 )
+
+// openAlexSortMappings maps tool sort values to OpenAlex API sort parameters.
+// Currently only supports citation sorting. Add more sort options here when needed.
+var openAlexSortMappings = map[string]string{
+	"cited_by_count": "cited_by_count:desc",
+}
 
 type ArxivResult struct {
 	Title     string   `json:"title"`
@@ -100,12 +108,17 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 	return string(b), nil
 }
 
+// OpenAlexResult represents a single result from OpenAlex API.
+// Optional fields use pointer types with omitempty to minimize token usage:
+// - nil pointer → field omitted from JSON (no data available)
+// - non-nil pointer → field included with value (data available, may be 0)
 type OpenAlexResult struct {
-	Title    string   `json:"title"`
-	Authors  []string `json:"authors"`
-	DOI      string   `json:"doi"`
-	Abstract string   `json:"abstract"`
-	Year     int      `json:"year"`
+	Title        string   `json:"title"`
+	Authors      []string `json:"authors"`
+	DOI          string   `json:"doi"`
+	Abstract     string   `json:"abstract"`
+	Year         int      `json:"year"`
+	CitedByCount *int     `json:"cited_by_count,omitempty"` // nil if OpenAlex has no citation data
 }
 
 type openAlexResponse struct {
@@ -116,6 +129,7 @@ type openAlexWork struct {
 	Title                 string               `json:"title"`
 	DOI                   string               `json:"doi"`
 	PublicationYear       int                  `json:"publication_year"`
+	CitedByCount          *int                 `json:"cited_by_count"`
 	Authorships           []openAlexAuthorship `json:"authorships"`
 	AbstractInvertedIndex map[string][]int     `json:"abstract_inverted_index"`
 }
@@ -131,6 +145,7 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 		Query      string `json:"query"`
 		MaxResults int    `json:"max_results"`
 		Filter     string `json:"filter"`
+		Sort       string `json:"sort"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return toolError("invalid input: "+err.Error(), false), nil
@@ -139,11 +154,25 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 		params.MaxResults = 10
 	}
 
+	// Validate sort parameter (if provided)
+	// Empty string is treated as no sort parameter (backward compat)
+	var sortParam string
+	if params.Sort != "" {
+		var valid bool
+		sortParam, valid = openAlexSortMappings[params.Sort]
+		if !valid {
+			return toolError(fmt.Sprintf("invalid sort value '%s': must be 'cited_by_count'", params.Sort), true), nil
+		}
+	}
+
 	u := "https://api.openalex.org/works?search=" + url.QueryEscape(params.Query) +
 		"&per_page=" + strconv.Itoa(params.MaxResults) +
 		"&mailto=arxiv-deep-research@users.noreply.github.com"
 	if params.Filter != "" {
 		u += "&filter=" + url.QueryEscape(params.Filter)
+	}
+	if sortParam != "" {
+		u += "&sort=" + sortParam
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -173,11 +202,12 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 			authors = append(authors, a.Author.DisplayName)
 		}
 		results = append(results, OpenAlexResult{
-			Title:    work.Title,
-			Authors:  authors,
-			DOI:      work.DOI,
-			Abstract: reconstructAbstract(work.AbstractInvertedIndex),
-			Year:     work.PublicationYear,
+			Title:        work.Title,
+			Authors:      authors,
+			DOI:          work.DOI,
+			Abstract:     reconstructAbstract(work.AbstractInvertedIndex),
+			Year:         work.PublicationYear,
+			CitedByCount: work.CitedByCount,
 		})
 	}
 
@@ -222,44 +252,6 @@ type ArxivPdfResult struct {
 	ArxivID string `json:"arxiv_id"`
 	PdfURL  string `json:"pdf_url"`
 	Version string `json:"version,omitempty"`
-}
-
-// GitHub search result types
-type GitHubRepoResult struct {
-	Name        string   `json:"name"`
-	FullName    string   `json:"full_name"`
-	Description string   `json:"description"`
-	Stars       int      `json:"stars"`
-	URL         string   `json:"url"`
-	Language    string   `json:"language"`
-	License     string   `json:"license"`
-	Topics      []string `json:"topics"`
-	UpdatedAt   string   `json:"updated_at"`
-	IsArchived  bool     `json:"is_archived"`
-}
-
-type githubSearchResponse struct {
-	TotalCount        int              `json:"total_count"`
-	IncompleteResults bool             `json:"incomplete_results"`
-	Items             []githubRepoItem `json:"items"`
-}
-
-type githubRepoItem struct {
-	Name        string             `json:"name"`
-	FullName    string             `json:"full_name"`
-	Description string             `json:"description"`
-	HTMLURL     string             `json:"html_url"`
-	Stars       int                `json:"stargazers_count"`
-	Language    string             `json:"language"`
-	License     *githubLicenseInfo `json:"license"`
-	Topics      []string           `json:"topics"`
-	UpdatedAt   string             `json:"updated_at"`
-	Archived    bool               `json:"archived"`
-}
-
-type githubLicenseInfo struct {
-	Key  string `json:"key"`
-	Name string `json:"name"`
 }
 
 func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.RawMessage) (string, error) {
@@ -376,6 +368,44 @@ func validateArxivPdf(ctx context.Context, client *http.Client, pdfURL string) e
 	}
 
 	return nil
+}
+
+// GitHub search result types
+type GitHubRepoResult struct {
+	Name        string   `json:"name"`
+	FullName    string   `json:"full_name"`
+	Description string   `json:"description"`
+	Stars       int      `json:"stars"`
+	URL         string   `json:"url"`
+	Language    string   `json:"language"`
+	License     string   `json:"license"`
+	Topics      []string `json:"topics"`
+	UpdatedAt   string   `json:"updated_at"`
+	IsArchived  bool     `json:"is_archived"`
+}
+
+type githubSearchResponse struct {
+	TotalCount        int              `json:"total_count"`
+	IncompleteResults bool             `json:"incomplete_results"`
+	Items             []githubRepoItem `json:"items"`
+}
+
+type githubRepoItem struct {
+	Name        string             `json:"name"`
+	FullName    string             `json:"full_name"`
+	Description string             `json:"description"`
+	HTMLURL     string             `json:"html_url"`
+	Stars       int                `json:"stargazers_count"`
+	Language    string             `json:"language"`
+	License     *githubLicenseInfo `json:"license"`
+	Topics      []string           `json:"topics"`
+	UpdatedAt   string             `json:"updated_at"`
+	Archived    bool               `json:"archived"`
+}
+
+type githubLicenseInfo struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
 }
 
 func (r *ResearchToolSet) handleSearchGithub(ctx context.Context, input json.RawMessage) (string, error) {
@@ -544,4 +574,130 @@ func (r *ResearchToolSet) executeGithubSearch(ctx context.Context, apiURL, origi
 		return toolError(fmt.Sprintf("internal error: failed to serialize results for query '%s'", originalQuery), false), nil
 	}
 	return string(b), nil
+}
+
+type WebSearchResult struct {
+	Title   string `json:"title"`
+	Snippet string `json:"snippet"`
+	URL     string `json:"url"`
+}
+
+// cleanSearchURL removes DuckDuckGo tracking parameters from search result URLs
+func cleanSearchURL(rawURL string) string {
+	// DuckDuckGo wraps result URLs in a redirect: /l/?uddg=<encoded>&rut=<encoded>
+	// Extract the 'uddg' parameter which contains the actual URL
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	if strings.HasPrefix(u.Path, "/l/") {
+		if uddg := u.Query().Get("uddg"); uddg != "" {
+			decoded, err := url.QueryUnescape(uddg)
+			if err == nil {
+				return decoded
+			}
+		}
+	}
+
+	return rawURL
+}
+
+// parseDuckDuckGoHTML extracts search results from DuckDuckGo HTML response.
+// Returns error if parsing fails or structure doesn't match expected format.
+func parseDuckDuckGoHTML(htmlBody string) ([]WebSearchResult, error) {
+	doc, err := html.Parse(strings.NewReader(htmlBody))
+	if err != nil {
+		return nil, fmt.Errorf("html parse failed: %w", err)
+	}
+
+	var results []WebSearchResult
+	var visit func(*html.Node)
+	visit = func(n *html.Node) {
+		// DuckDuckGo result divs have class="result results_links results_links_deep web-result"
+		if n.Type == html.ElementNode && n.Data == "div" {
+			if hasClass(n, "result") && hasClass(n, "results_links") {
+				if result := extractResult(n); result != nil {
+					results = append(results, *result)
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			visit(c)
+		}
+	}
+	visit(doc)
+
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no results found in HTML (possible CAPTCHA or format change)")
+	}
+
+	return results, nil
+}
+
+func hasClass(n *html.Node, class string) bool {
+	for _, attr := range n.Attr {
+		if attr.Key == "class" && strings.Contains(attr.Val, class) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractResult extracts title, snippet, and URL from a single result div
+func extractResult(div *html.Node) *WebSearchResult {
+	var title, snippet, rawURL string
+
+	var visit func(*html.Node)
+	visit = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			switch n.Data {
+			case "a":
+				// Title link has class="result__a"
+				if hasClass(n, "result__a") {
+					title = getTextContent(n)
+					for _, attr := range n.Attr {
+						if attr.Key == "href" {
+							rawURL = attr.Val
+							break
+						}
+					}
+				}
+			case "div":
+				// Snippet div has class="result__snippet"
+				if hasClass(n, "result__snippet") {
+					snippet = getTextContent(n)
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			visit(c)
+		}
+	}
+	visit(div)
+
+	if title == "" || rawURL == "" {
+		return nil
+	}
+
+	return &WebSearchResult{
+		Title:   strings.TrimSpace(title),
+		Snippet: strings.TrimSpace(snippet),
+		URL:     cleanSearchURL(rawURL),
+	}
+}
+
+func getTextContent(n *html.Node) string {
+	var buf strings.Builder
+	var visit func(*html.Node)
+	visit = func(node *html.Node) {
+		if node.Type == html.TextNode {
+			buf.WriteString(node.Data)
+		}
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			visit(c)
+		}
+	}
+	visit(n)
+	return buf.String()
 }
