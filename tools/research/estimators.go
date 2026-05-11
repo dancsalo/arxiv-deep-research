@@ -19,5 +19,27 @@ func ResearchToolEstimators() map[string]func(args map[string]any) int {
 		"fetch_arxiv_pdf": func(args map[string]any) int {
 			return 100 // Fixed cost: just returns URL (small JSON response)
 		},
+		"search_github_repos": func(args map[string]any) int {
+			// Estimate: base overhead + query + results
+			// Each result: ~200 tokens (name, desc, metadata, URL)
+			n := 5 // default
+			if v, ok := args["max_results"].(float64); ok && v > 0 {
+				n = int(v)
+				if n > 5 {
+					n = 5 // cap at 5
+				}
+			}
+
+			// Query length estimation
+			queryTokens := 0
+			if query, ok := args["query"].(string); ok {
+				queryTokens = len(query) / 4 // rough estimate: 4 chars per token
+			}
+
+			baseOverhead := 50
+			resultTokens := n * 200
+
+			return baseOverhead + queryTokens + resultTokens
+		},
 	}
 }
