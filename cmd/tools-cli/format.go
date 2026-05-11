@@ -15,49 +15,41 @@ func formatOutput(w io.Writer, toolName string, result string, asJSON bool) erro
 		return nil
 	}
 
-	// Parse result to determine format
-	var resultData map[string]interface{}
-	if err := json.Unmarshal([]byte(result), &resultData); err != nil {
-		return fmt.Errorf("failed to parse result: %w", err)
-	}
-
-	// Check for errors
-	if errMsg, ok := resultData["error"].(string); ok {
-		fmt.Fprintf(w, "Error: %s\n", errMsg)
-		if recoverable, ok := resultData["recoverable"].(bool); ok && recoverable {
-			fmt.Fprintln(w, "(This error is recoverable - you can retry)")
+	// Try to parse as error first
+	var errData map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &errData); err == nil {
+		if errMsg, ok := errData["error"].(string); ok {
+			fmt.Fprintf(w, "Error: %s\n", errMsg)
+			if recoverable, ok := errData["recoverable"].(bool); ok && recoverable {
+				fmt.Fprintln(w, "(This error is recoverable - you can retry)")
+			}
+			return nil
 		}
-		return nil
 	}
 
 	// Format based on tool type
 	switch toolName {
 	case "search-arxiv", "search-openalex":
-		return formatSearchResults(w, resultData)
+		return formatSearchResults(w, result)
 	case "fetch-pdf":
-		return formatPdfResult(w, resultData)
+		return formatPdfResult(w, result)
 	case "search-github":
-		return formatGithubResults(w, resultData)
+		return formatGithubResults(w, result)
 	default:
 		return fmt.Errorf("unknown tool: %s", toolName)
 	}
 }
 
-func formatSearchResults(w io.Writer, data map[string]interface{}) error {
-	query, _ := data["query"].(string)
-	results, ok := data["results"].([]interface{})
-	if !ok {
-		return fmt.Errorf("invalid results format")
+func formatSearchResults(w io.Writer, result string) error {
+	// Parse as array of results
+	var results []map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &results); err != nil {
+		return fmt.Errorf("invalid results format: %w", err)
 	}
 
-	fmt.Fprintf(w, "=== Search Results for %q ===\n\n", query)
+	fmt.Fprintf(w, "=== Search Results ===\n\n")
 
-	for i, item := range results {
-		paper, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
+	for i, paper := range results {
 		fmt.Fprintf(w, "%d. %s\n", i+1, paper["title"])
 
 		if authors, ok := paper["authors"].([]interface{}); ok && len(authors) > 0 {
@@ -95,7 +87,13 @@ func formatSearchResults(w io.Writer, data map[string]interface{}) error {
 	return nil
 }
 
-func formatPdfResult(w io.Writer, data map[string]interface{}) error {
+func formatPdfResult(w io.Writer, result string) error {
+	// Parse PDF result
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &data); err != nil {
+		return fmt.Errorf("invalid PDF result format: %w", err)
+	}
+
 	arxivID, _ := data["arxiv_id"].(string)
 	pdfURL, _ := data["pdf_url"].(string)
 
@@ -105,21 +103,16 @@ func formatPdfResult(w io.Writer, data map[string]interface{}) error {
 	return nil
 }
 
-func formatGithubResults(w io.Writer, data map[string]interface{}) error {
-	query, _ := data["query"].(string)
-	results, ok := data["results"].([]interface{})
-	if !ok {
-		return fmt.Errorf("invalid results format")
+func formatGithubResults(w io.Writer, result string) error {
+	// Parse as array of results
+	var results []map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &results); err != nil {
+		return fmt.Errorf("invalid results format: %w", err)
 	}
 
-	fmt.Fprintf(w, "=== GitHub Repository Search for %q ===\n\n", query)
+	fmt.Fprintf(w, "=== GitHub Repository Search ===\n\n")
 
-	for i, item := range results {
-		repo, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
+	for i, repo := range results {
 		name, _ := repo["name"].(string)
 		fmt.Fprintf(w, "%d. %s\n", i+1, name)
 
