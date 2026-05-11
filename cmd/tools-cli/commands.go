@@ -33,20 +33,22 @@ func executeCommand(ctx context.Context, toolset *research.ResearchToolSet, comm
 func executeSearchArxiv(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
 	fs := flag.NewFlagSet("search-arxiv", flag.ExitOnError)
 	maxResults := fs.Int("max-results", 10, "maximum number of results")
+	searchField := fs.String("search-field", "title", "field to search: title (default) or abstract")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if fs.NArg() == 0 {
-		return fmt.Errorf("query argument required\n\nUsage: tools-cli search-arxiv <query> [--max-results=N]\n\nExample: tools-cli search-arxiv \"attention mechanism\"")
+		return fmt.Errorf("query argument required\n\nUsage: tools-cli search-arxiv <query> [--max-results=N] [--search-field=FIELD]\n\nExamples:\n  tools-cli search-arxiv \"attention mechanism\"\n  tools-cli search-arxiv \"transformers\" --search-field=abstract")
 	}
 
 	query := fs.Arg(0)
 
 	input := map[string]interface{}{
-		"query":       query,
-		"max_results": *maxResults,
+		"query":        query,
+		"max_results":  *maxResults,
+		"search_field": *searchField,
 	}
 
 	inputJSON, err := json.Marshal(input)

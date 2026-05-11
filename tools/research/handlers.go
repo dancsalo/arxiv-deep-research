@@ -51,8 +51,9 @@ type atomAuthor struct {
 
 func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawMessage) (string, error) {
 	var params struct {
-		Query      string `json:"query"`
-		MaxResults int    `json:"max_results"`
+		Query       string `json:"query"`
+		MaxResults  int    `json:"max_results"`
+		SearchField string `json:"search_field"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return toolError("invalid input: "+err.Error(), false), nil
@@ -61,8 +62,35 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 		params.MaxResults = 10
 	}
 
-	u := fmt.Sprintf("https://export.arxiv.org/api/query?search_query=all:%s&max_results=%d",
-		url.QueryEscape(params.Query), params.MaxResults)
+	// Map search_field to arXiv API prefix
+	searchPrefix := "ti" // Default to title
+	switch params.SearchField {
+	case "abstract":
+		searchPrefix = "abs"
+	case "title", "": // Empty string defaults to title
+		searchPrefix = "ti"
+	default:
+		return toolError(fmt.Sprintf("invalid search_field '%s': must be 'title' or 'abstract'", params.SearchField), false), nil
+	}
+
+	// Build search query with AND logic for multi-word queries
+	// This ensures all terms must match rather than any term (OR logic)
+	queryTerms := strings.Fields(params.Query)
+	var searchQuery string
+	if len(queryTerms) > 1 {
+		// Multi-word: join with AND
+		parts := make([]string, len(queryTerms))
+		for i, term := range queryTerms {
+			parts[i] = fmt.Sprintf("%s:%s", searchPrefix, url.QueryEscape(term))
+		}
+		searchQuery = strings.Join(parts, "+AND+")
+	} else {
+		// Single word: simple format
+		searchQuery = fmt.Sprintf("%s:%s", searchPrefix, url.QueryEscape(params.Query))
+	}
+
+	u := fmt.Sprintf("https://export.arxiv.org/api/query?search_query=%s&max_results=%d",
+		searchQuery, params.MaxResults)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

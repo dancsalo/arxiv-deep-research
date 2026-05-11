@@ -63,7 +63,7 @@ Usage:
   tools-cli [flags] <command> [args]
 
 Commands:
-  search-arxiv <query> [--max-results=N]
+  search-arxiv <query> [--max-results=N] [--search-field=FIELD]
   search-openalex <query> [--max-results=N] [--filter=EXPR]
   fetch-pdf <arxiv-id>
   search-github <query> [--max-results=N]
@@ -77,6 +77,7 @@ Flags:
 
 Examples:
   tools-cli search-arxiv "attention mechanism"
+  tools-cli search-arxiv "neural networks" --search-field=abstract
   tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
   tools-cli fetch-pdf "1706.03762"
   tools-cli search-github "diffusion models pytorch"
