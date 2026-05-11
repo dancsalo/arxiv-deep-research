@@ -15,6 +15,12 @@ import (
 	"time"
 )
 
+// openAlexSortMappings maps tool sort values to OpenAlex API sort parameters
+var openAlexSortMappings = map[string]string{
+	"cited_by_count": "cited_by_count:desc",
+	// Future: "publication_date": "publication_date:desc",
+}
+
 type ArxivResult struct {
 	Title     string   `json:"title"`
 	Authors   []string `json:"authors"`
@@ -100,11 +106,12 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 }
 
 type OpenAlexResult struct {
-	Title    string   `json:"title"`
-	Authors  []string `json:"authors"`
-	DOI      string   `json:"doi"`
-	Abstract string   `json:"abstract"`
-	Year     int      `json:"year"`
+	Title        string   `json:"title"`
+	Authors      []string `json:"authors"`
+	DOI          string   `json:"doi"`
+	Abstract     string   `json:"abstract"`
+	Year         int      `json:"year"`
+	CitedByCount *int     `json:"cited_by_count,omitempty"`
 }
 
 type openAlexResponse struct {
@@ -115,6 +122,7 @@ type openAlexWork struct {
 	Title                 string               `json:"title"`
 	DOI                   string               `json:"doi"`
 	PublicationYear       int                  `json:"publication_year"`
+	CitedByCount          *int                 `json:"cited_by_count"`
 	Authorships           []openAlexAuthorship `json:"authorships"`
 	AbstractInvertedIndex map[string][]int     `json:"abstract_inverted_index"`
 }
@@ -130,6 +138,7 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 		Query      string `json:"query"`
 		MaxResults int    `json:"max_results"`
 		Filter     string `json:"filter"`
+		Sort       string `json:"sort"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return toolError("invalid input: "+err.Error(), false), nil
@@ -138,11 +147,24 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 		params.MaxResults = 10
 	}
 
+	// Validate sort parameter (if provided)
+	var sortParam string
+	if params.Sort != "" {
+		var valid bool
+		sortParam, valid = openAlexSortMappings[params.Sort]
+		if !valid {
+			return toolError(fmt.Sprintf("invalid sort value '%s': must be 'cited_by_count'", params.Sort), true), nil
+		}
+	}
+
 	u := "https://api.openalex.org/works?search=" + url.QueryEscape(params.Query) +
 		"&per_page=" + strconv.Itoa(params.MaxResults) +
 		"&mailto=arxiv-deep-research@users.noreply.github.com"
 	if params.Filter != "" {
 		u += "&filter=" + url.QueryEscape(params.Filter)
+	}
+	if sortParam != "" {
+		u += "&sort=" + sortParam
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
@@ -172,11 +194,12 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 			authors = append(authors, a.Author.DisplayName)
 		}
 		results = append(results, OpenAlexResult{
-			Title:    work.Title,
-			Authors:  authors,
-			DOI:      work.DOI,
-			Abstract: reconstructAbstract(work.AbstractInvertedIndex),
-			Year:     work.PublicationYear,
+			Title:        work.Title,
+			Authors:      authors,
+			DOI:          work.DOI,
+			Abstract:     reconstructAbstract(work.AbstractInvertedIndex),
+			Year:         work.PublicationYear,
+			CitedByCount: work.CitedByCount,
 		})
 	}
 

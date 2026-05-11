@@ -45,13 +45,17 @@ func BuildSearchOpenAlexTool() anthropic.ToolUnionParam {
 					"type":        "string",
 					"description": "Optional OpenAlex filter expression (e.g. \"publication_year:>2022\")",
 				},
+				"sort": map[string]any{
+					"type":        "string",
+					"description": "Sort order: 'cited_by_count' (most cited first). Omit for default relevance ranking.",
+				},
 			},
 			Required: []string{"query"},
 		},
 		"search_openalex",
 	)
 	t.OfTool.Description = anthropic.String(
-		"Search OpenAlex for published academic works. Returns titles, authors, DOIs, and abstracts.",
+		"Search OpenAlex for published academic works. Returns titles, authors, DOIs, abstracts, and citation counts. Supports sorting by citation count (most cited first) when sort='cited_by_count'. Default: relevance ranking. Always returns citation counts for all papers.",
 	)
 	return t
 }
