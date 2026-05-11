@@ -128,3 +128,32 @@ func BuildSearchWebTool() anthropic.ToolUnionParam {
 	)
 	return t
 }
+
+func BuildGetCitationsAndReferencesTool() anthropic.ToolUnionParam {
+	t := anthropic.ToolUnionParamOfTool(
+		anthropic.ToolInputSchemaParam{
+			Type: "object",
+			Properties: map[string]any{
+				"work_id": map[string]any{
+					"type":        "string",
+					"description": "OpenAlex work ID (format: W2741809807). Use search_openalex to find work IDs.",
+				},
+				"direction": map[string]any{
+					"type":        "string",
+					"description": "Direction: 'references' (papers cited BY this work) or 'cited_by' (papers that cite this work)",
+				},
+				"max_results": map[string]any{
+					"type":        "integer",
+					"description": "Maximum number of results to return (default 10, max 50)",
+					"default":     10,
+				},
+			},
+			Required: []string{"work_id", "direction"},
+		},
+		"get_citations_and_references",
+	)
+	t.OfTool.Description = anthropic.String(
+		"Get citations and references for an academic work from OpenAlex. Use direction='references' to get the bibliography (papers cited BY this work), or direction='cited_by' to get forward citations (papers that cite this work). Returns lightweight metadata: title, authors, year, citation count, DOI. For abstracts, use search_openalex with the DOI.",
+	)
+	return t
+}

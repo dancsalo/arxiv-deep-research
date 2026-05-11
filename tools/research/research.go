@@ -48,6 +48,7 @@ func (r *ResearchToolSet) Register(reg *registry.ToolRegistry) {
 	reg.Register("fetch_arxiv_pdf", BuildFetchArxivPdfTool(), r.handleFetchArxivPdf)
 	reg.Register("search_github_repos", BuildSearchGithubTool(), r.handleSearchGithub)
 	reg.Register("search_web", BuildSearchWebTool(), r.handleSearchWeb)
+	reg.Register("get_citations_and_references", BuildGetCitationsAndReferencesTool(), r.handleGetCitationsAndReferences)
 }
 
 func toolError(msg string, recoverable bool) string {
