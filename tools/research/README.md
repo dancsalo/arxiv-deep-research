@@ -22,10 +22,10 @@ Searches arXiv for academic preprints.
 **Input:**
 - `query` (string, required): Search query
 - `max_results` (integer, optional): Maximum results (default: 10)
-- `search_field` (string, optional): Field to search in (all, title, abstract, author)
+- `search_field` (string, optional): Field to search: 'title' (default, most relevant) or 'abstract' (broader results)
 
 **Output:**
-- Array of papers with title, authors, abstract, publication date, arXiv ID, PDF URL
+- Array of papers with title, authors, abstract, arXiv ID, publication date, link (PDF URL)
 
 **Example:**
 ```bash
@@ -41,23 +41,25 @@ tools-cli search-arxiv "neural networks" --search-field abstract
 
 ### search_openalex
 
-Searches OpenAlex for published academic works with advanced filtering support.
+Searches OpenAlex for published academic works with advanced filtering and sorting support.
 
 **Input:**
 - `query` (string, required): Search query
 - `max_results` (integer, optional): Maximum results (default: 10)
-- `filter` (string, optional): OpenAlex filter expression (e.g., "publication_year:>2023")
+- `filter` (string, optional): OpenAlex filter expression (e.g., "publication_year:>2022")
+- `sort` (string, optional): Sort order: 'cited_by_count' (most cited first). Omit for default relevance ranking.
 
 **Output:**
-- Array of works with title, authors, abstract, publication date, DOI, citations count, PDF URL
+- Array of works with title, authors, DOI, abstract (when available), citation counts, publication year
 
 **Example:**
 ```bash
-tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
+tools-cli search-openalex "neural networks" --filter "publication_year:>2022"
 tools-cli search-openalex "quantum computing" --max-results 20
+tools-cli search-openalex "transformers" --sort cited_by_count
 ```
 
-**Use case:** Finding highly-cited recent work with specific filters
+**Use case:** Finding highly-cited recent work with specific filters. Use `sort=cited_by_count` for most influential papers.
 
 **Implementation:** `handlers.go:handleSearchOpenAlex()`
 
@@ -95,7 +97,7 @@ Finds popular GitHub repositories related to a search query.
 - `max_results` (integer, optional): Maximum results (default: 5, max: 5)
 
 **Output:**
-- Array of repositories with name, description, URL, stars, language, topics
+- Array of repositories with name, description, URL, stars, language, license, topics, last updated date
 
 **Example:**
 ```bash
@@ -106,6 +108,8 @@ tools-cli search-github "transformer language:python stars:>100"
 **Use case:** Finding reference implementations and popular codebases
 
 **Implementation:** `handlers.go:handleSearchGithubRepos()`
+
+**Important:** Results are automatically filtered to show only popular, actively-maintained repos (>100 stars, updated within 2 years, not archived). NOT suitable for finding experimental, niche, or small projects.
 
 **GitHub Search Syntax:**
 - `language:python` - Filter by programming language
@@ -121,7 +125,7 @@ Searches the general web using DuckDuckGo, useful as a fallback when academic da
 
 **Input:**
 - `query` (string, required): Web search query
-- `max_results` (integer, optional): Maximum results (default: 10)
+- `max_results` (integer, optional): Maximum results (default: 10, max: 10)
 
 **Output:**
 - Array of web results with title, URL, and snippet
@@ -131,7 +135,9 @@ Searches the general web using DuckDuckGo, useful as a fallback when academic da
 tools-cli search-web "quantum computing tutorials"
 ```
 
-**Use case:** Finding tutorials, documentation, and general information when academic sources are insufficient
+**Use case:** Finding tutorials, documentation, and general information when academic sources are insufficient. Use as fallback when arXiv/OpenAlex lack coverage.
+
+**Important:** NOT reliable for 'most cited papers' - use search_openalex with citation sorting instead. WARNING: May be unreliable due to bot detection.
 
 **Implementation:** `search_web.go:handleSearchWeb()`
 
@@ -139,21 +145,23 @@ tools-cli search-web "quantum computing tutorials"
 
 ### get_citations_and_references
 
-Gets citation counts and reference lists from OpenAlex for a given work.
+Gets citations and references for an academic work from OpenAlex.
 
 **Input:**
-- `openalex_id` (string, required): OpenAlex work ID (e.g., "W2123456789")
-- `doi` (string, optional): DOI as alternative identifier
+- `work_id` (string, required): OpenAlex work ID (format: W2741809807). Use search_openalex to find work IDs.
+- `direction` (string, required): Direction: 'references' (papers cited BY this work) or 'cited_by' (papers that cite this work)
+- `max_results` (integer, optional): Maximum number of results to return (default: 10, max: 50)
 
 **Output:**
-- Citation count, cited-by works, and referenced works with metadata
+- Lightweight metadata for citations or references: title, authors, year, citation count, DOI
 
 **Example:**
 ```bash
-tools-cli get-citations "W2123456789"
+tools-cli get-citations "W2741809807" --direction references
+tools-cli get-citations "W2741809807" --direction cited_by --max-results 20
 ```
 
-**Use case:** Analyzing citation networks and finding related papers
+**Use case:** Use direction='references' to get the bibliography (papers cited BY this work), or direction='cited_by' to get forward citations (papers that cite this work). For abstracts, use search_openalex with the DOI.
 
 **Implementation:** `handlers.go:handleGetCitationsAndReferences()`
 
