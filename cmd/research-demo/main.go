@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -29,12 +32,51 @@ func (a *sdkAdapter) CreateMessage(ctx context.Context, params anthropic.Message
 	return a.client.Messages.New(ctx, params)
 }
 
+func loadPrompt(variant string) (string, string, error) {
+	variantMap := map[string]string{
+		"A": "variant-a-explicit.txt",
+		"B": "variant-b-metacognitive.txt",
+		"C": "variant-c-reward.txt",
+	}
+
+	filename, ok := variantMap[variant]
+	if !ok {
+		return "", "", fmt.Errorf("unknown prompt variant: %s (must be A, B, or C)", variant)
+	}
+
+	// Construct path relative to this source file
+	exePath, err := os.Executable()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get executable path: %w", err)
+	}
+	exeDir := filepath.Dir(exePath)
+
+	// Try relative to executable first (for installed binary)
+	promptPath := filepath.Join(exeDir, "prompts", filename)
+	content, err := os.ReadFile(promptPath)
+	if err != nil {
+		// Fall back to relative to source (for development)
+		promptPath = filepath.Join("cmd", "research-demo", "prompts", filename)
+		content, err = os.ReadFile(promptPath)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to read prompt file: %w", err)
+		}
+	}
+
+	// Compute SHA256 hash, take first 8 hex chars
+	hash := sha256.Sum256(content)
+	hashStr := hex.EncodeToString(hash[:])[:8]
+
+	return string(content), hashStr, nil
+}
+
 func main() {
 	query := flag.String("query", "retrieval augmented generation", "research query")
 	model := flag.String("model", "", "model ID override")
 	maxTurns := flag.Int("max-turns", 10, "maximum agentic loop turns")
 	traceDir := flag.String("trace-dir", ".traces", "directory for trace files (empty to disable)")
 	useBedrock := flag.Bool("bedrock", true, "use AWS Bedrock")
+	promptVariant := flag.String("prompt-variant", "A", "prompt variant: A (explicit), B (metacognitive), C (reward)")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -62,13 +104,22 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
+	// Load prompt based on variant
+	promptText, promptHash, err := loadPrompt(*promptVariant)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading prompt: %v\n", err)
+		os.Exit(1)
+	}
+
 	sessionID := fmt.Sprintf("demo-%d", time.Now().UnixMilli())
 	traceCfg := tracing.Config{
-		Dir:       *traceDir,
-		SessionID: sessionID,
-		Query:     *query,
-		Model:     string(modelID),
-		Logger:    logger,
+		Dir:           *traceDir,
+		SessionID:     sessionID,
+		Query:         *query,
+		Model:         string(modelID),
+		PromptVariant: *promptVariant,
+		PromptHash:    promptHash,
+		Logger:        logger,
 	}
 	hooks, recorder := tracing.NewTracingHooks(traceCfg)
 
@@ -87,7 +138,7 @@ func main() {
 	})
 
 	systemBlocks := []anthropic.TextBlockParam{
-		{Text: "You are an expert research assistant. Your goal is to produce a comprehensive, well-researched summary on the given topic.\n\nAvailable Tools:\n- search_arxiv: Search arXiv for academic preprints\n- search_openalex: Search OpenAlex for published academic works (supports citation sorting with sort=cited_by_count)\n- fetch_arxiv_pdf: Get PDF download URL for arXiv papers\n- search_github_repos: Find popular GitHub repositories with code implementations\n- search_web: Search the general web (fallback when academic databases lack coverage)\n\nResearch Strategy:\n1. Start with broad searches on arXiv and OpenAlex to understand the landscape\n2. Based on initial findings, identify 2-3 promising research directions, key authors, or recent developments worth exploring in depth\n3. Conduct focused follow-up searches to investigate these areas:\n   - Refine queries to target specific subtopics or methodologies\n   - Search for recent work by key authors you identified\n   - Use filters (e.g., publication_year:>2023) to find cutting-edge research\n   - Use search_github_repos to find reference implementations when relevant\n4. Continue searching until you can answer:\n   - What are the key papers and their contributions?\n   - Who are the leading researchers and what are they working on?\n   - What are the current trends and future directions?\n   - Are there competing approaches or open debates?\n   - What code implementations are available? (when relevant)\n\nYou may call any search tool as many times as needed. Iterative refinement is encouraged - if a search doesn't yield useful results, try different query terms or filters.\n\nStop searching when you have sufficient information to provide a thorough analysis that addresses the questions above. This typically requires 6-10 searches, but let research quality guide you, not a target number.\n\nIMPORTANT: When you have completed your research and are ready to present your findings, you MUST call the finish_loop tool with your complete markdown summary. Do not output your summary as text - use the finish_loop tool with a summary field containing your markdown.\n\nYour finish_loop summary should include:\n- Key research findings and trends\n- Important papers with authors and specific contributions\n- Current state of the field and future directions\n- Any notable debates or competing approaches\n- Notable implementations (if you used search_github_repos)", Type: "text"},
+		{Text: promptText, Type: "text"},
 	}
 
 	initialMsg := anthropic.NewUserMessage(anthropic.NewTextBlock(
