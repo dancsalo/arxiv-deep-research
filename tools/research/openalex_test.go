@@ -172,8 +172,8 @@ func TestResearchToolEstimators(t *testing.T) {
 	}
 
 	got = estimators["search_openalex"](map[string]any{"max_results": float64(3)})
-	if got != 1100 {
-		t.Errorf("search_openalex(3): got %d, want 1100", got)
+	if got != 1130 { // Updated from 1100: 50 + 3*360 = 1130 (added 10 tokens per result for citation count)
+		t.Errorf("search_openalex(3): got %d, want 1130", got)
 	}
 
 	got = estimators["search_arxiv"](map[string]any{})
