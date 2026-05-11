@@ -79,3 +79,28 @@ func BuildFetchArxivPdfTool() anthropic.ToolUnionParam {
 	)
 	return t
 }
+
+func BuildSearchWebTool() anthropic.ToolUnionParam {
+	t := anthropic.ToolUnionParamOfTool(
+		anthropic.ToolInputSchemaParam{
+			Type: "object",
+			Properties: map[string]any{
+				"query": map[string]any{
+					"type":        "string",
+					"description": "Search query for web search",
+				},
+				"max_results": map[string]any{
+					"type":        "integer",
+					"description": "Maximum number of results to return (default 10, max 10)",
+					"default":     10,
+				},
+			},
+			Required: []string{"query"},
+		},
+		"search_web",
+	)
+	t.OfTool.Description = anthropic.String(
+		"Search the general web. Returns titles, snippets, and URLs. Use as fallback when arXiv/OpenAlex lack coverage. NOT reliable for 'most cited papers' - use search_openalex with citation sorting instead. WARNING: May be unreliable due to bot detection.",
+	)
+	return t
+}

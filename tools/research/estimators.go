@@ -20,5 +20,10 @@ func ResearchToolEstimators() map[string]func(args map[string]any) int {
 		"fetch_arxiv_pdf": func(args map[string]any) int {
 			return 100 // Fixed cost: just returns URL (small JSON response)
 		},
+		"search_web": func(args map[string]any) int {
+			// Web search returns up to 10 results with title, snippet, URL
+			// Estimated ~200 tokens per result
+			return 50 + 10*200 // 2050 tokens
+		},
 	}
 }

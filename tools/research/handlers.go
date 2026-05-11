@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/net/html"
 )
 
 // openAlexSortMappings maps tool sort values to OpenAlex API sort parameters.
@@ -356,4 +358,130 @@ func validateArxivPdf(ctx context.Context, client *http.Client, pdfURL string) e
 	}
 
 	return nil
+}
+
+type WebSearchResult struct {
+	Title   string `json:"title"`
+	Snippet string `json:"snippet"`
+	URL     string `json:"url"`
+}
+
+// cleanSearchURL removes DuckDuckGo tracking parameters from search result URLs
+func cleanSearchURL(rawURL string) string {
+	// DuckDuckGo wraps result URLs in a redirect: /l/?uddg=<encoded>&rut=<encoded>
+	// Extract the 'uddg' parameter which contains the actual URL
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+
+	if strings.HasPrefix(u.Path, "/l/") {
+		if uddg := u.Query().Get("uddg"); uddg != "" {
+			decoded, err := url.QueryUnescape(uddg)
+			if err == nil {
+				return decoded
+			}
+		}
+	}
+
+	return rawURL
+}
+
+// parseDuckDuckGoHTML extracts search results from DuckDuckGo HTML response.
+// Returns error if parsing fails or structure doesn't match expected format.
+func parseDuckDuckGoHTML(htmlBody string) ([]WebSearchResult, error) {
+	doc, err := html.Parse(strings.NewReader(htmlBody))
+	if err != nil {
+		return nil, fmt.Errorf("html parse failed: %w", err)
+	}
+
+	var results []WebSearchResult
+	var visit func(*html.Node)
+	visit = func(n *html.Node) {
+		// DuckDuckGo result divs have class="result results_links results_links_deep web-result"
+		if n.Type == html.ElementNode && n.Data == "div" {
+			if hasClass(n, "result") && hasClass(n, "results_links") {
+				if result := extractResult(n); result != nil {
+					results = append(results, *result)
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			visit(c)
+		}
+	}
+	visit(doc)
+
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no results found in HTML (possible CAPTCHA or format change)")
+	}
+
+	return results, nil
+}
+
+func hasClass(n *html.Node, class string) bool {
+	for _, attr := range n.Attr {
+		if attr.Key == "class" && strings.Contains(attr.Val, class) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractResult extracts title, snippet, and URL from a single result div
+func extractResult(div *html.Node) *WebSearchResult {
+	var title, snippet, rawURL string
+
+	var visit func(*html.Node)
+	visit = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			switch n.Data {
+			case "a":
+				// Title link has class="result__a"
+				if hasClass(n, "result__a") {
+					title = getTextContent(n)
+					for _, attr := range n.Attr {
+						if attr.Key == "href" {
+							rawURL = attr.Val
+							break
+						}
+					}
+				}
+			case "div":
+				// Snippet div has class="result__snippet"
+				if hasClass(n, "result__snippet") {
+					snippet = getTextContent(n)
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			visit(c)
+		}
+	}
+	visit(div)
+
+	if title == "" || rawURL == "" {
+		return nil
+	}
+
+	return &WebSearchResult{
+		Title:   strings.TrimSpace(title),
+		Snippet: strings.TrimSpace(snippet),
+		URL:     cleanSearchURL(rawURL),
+	}
+}
+
+func getTextContent(n *html.Node) string {
+	var buf strings.Builder
+	var visit func(*html.Node)
+	visit = func(node *html.Node) {
+		if node.Type == html.TextNode {
+			buf.WriteString(node.Data)
+		}
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			visit(c)
+		}
+	}
+	visit(n)
+	return buf.String()
 }
