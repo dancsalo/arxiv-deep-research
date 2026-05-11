@@ -136,6 +136,40 @@ go build ./cmd/tools-cli
 ./tools-cli --interactive
 ```
 
+### Research Demo with Prompt Variants
+
+The research-demo tool supports three system prompt variants for experimentation:
+
+**Variant A (Explicit)** - Prescriptive turn-by-turn guidance
+- Enforces parallel tool usage for breadth
+- Provides explicit examples of sequential chains
+- Targets 10-15 turns with structured phases
+
+**Variant B (Metacognitive)** - Strategy planning and self-reflection
+- Prompts for pre-turn planning and post-turn reflection
+- Adaptive tool selection based on findings
+- Quality gates for stopping criteria
+
+**Variant C (Reward-Shaping)** - Quality metrics and scoring
+- Evaluates research on 5 dimensions (tool diversity, triangulation, depth, breadth, implementations)
+- Target score: 90+ points for "Excellent" quality
+- Self-assessment before completion
+
+Usage:
+```bash
+research-demo --query "transformers" --prompt-variant A
+research-demo --query "transformers" --prompt-variant B --max-turns 15
+research-demo --query "transformers" --prompt-variant C
+```
+
+Compare multiple runs:
+```bash
+compare-traces .traces/demo-*.json
+compare-traces --json .traces/demo-1.json .traces/demo-2.json > comparison.json
+```
+
+Prompt files are stored in `cmd/research-demo/prompts/variant-{a,b,c}.txt` and can be customized.
+
 ## CLI Usage
 
 ### Script Mode
