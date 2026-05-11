@@ -16,13 +16,18 @@ func BuildSearchArxivTool() anthropic.ToolUnionParam {
 					"description": "Maximum number of results to return (default 10)",
 					"default":     10,
 				},
+				"search_field": map[string]any{
+					"type":        "string",
+					"description": "Field to search: 'title' (default, most relevant) or 'abstract' (broader results)",
+					"default":     "title",
+				},
 			},
 			Required: []string{"query"},
 		},
 		"search_arxiv",
 	)
 	t.OfTool.Description = anthropic.String(
-		"Search arXiv for academic preprints. Returns titles, authors, abstracts, and links.",
+		"Search arXiv for academic preprints. Returns titles, authors, abstracts, and links. Searches by title by default for most relevant results. Use search_field='abstract' for broader searches that include abstract text.",
 	)
 	return t
 }
