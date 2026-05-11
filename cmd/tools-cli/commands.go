@@ -21,6 +21,8 @@ func executeCommand(ctx context.Context, toolset *research.ResearchToolSet, comm
 		return executeFetchPdf(ctx, toolset, args)
 	case "search-github":
 		return executeSearchGithub(ctx, toolset, args)
+	case "search-web":
+		return executeSearchWeb(ctx, toolset, args)
 	default:
 		return fmt.Errorf("unknown command: %s", command)
 	}
@@ -154,6 +156,38 @@ func executeSearchGithub(ctx context.Context, toolset *research.ResearchToolSet,
 	}
 
 	return formatOutput(os.Stdout, "search-github", result, *jsonOutput)
+}
+
+func executeSearchWeb(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
+	fs := flag.NewFlagSet("search-web", flag.ExitOnError)
+	maxResults := fs.Int("max-results", 10, "maximum number of results")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if fs.NArg() == 0 {
+		return fmt.Errorf("query argument required\n\nUsage: tools-cli search-web <query> [--max-results=N]\n\nExample: tools-cli search-web \"quantum computing tutorials\"")
+	}
+
+	query := fs.Arg(0)
+
+	input := map[string]interface{}{
+		"query":       query,
+		"max_results": *maxResults,
+	}
+
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("failed to marshal input: %w", err)
+	}
+
+	result, err := callToolHandler(ctx, toolset, "search_web", inputJSON)
+	if err != nil {
+		return err
+	}
+
+	return formatOutput(os.Stdout, "search-web", result, *jsonOutput)
 }
 
 // callToolHandler calls a tool handler through the registry

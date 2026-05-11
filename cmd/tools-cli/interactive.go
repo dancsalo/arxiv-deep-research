@@ -24,6 +24,7 @@ func runInteractive(ctx context.Context, toolset *research.ResearchToolSet) erro
 		fmt.Println("  [2] search-openalex     - Search academic literature")
 		fmt.Println("  [3] fetch-pdf           - Get arXiv PDF download URL")
 		fmt.Println("  [4] search-github       - Find GitHub repositories")
+		fmt.Println("  [5] search-web          - Search the general web")
 		fmt.Println("  [0] Exit")
 		fmt.Println()
 
@@ -52,6 +53,10 @@ func runInteractive(ctx context.Context, toolset *research.ResearchToolSet) erro
 			}
 		case "4":
 			if err := interactiveSearchGithub(ctx, toolset, reader); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+			}
+		case "5":
+			if err := interactiveSearchWeb(ctx, toolset, reader); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 			}
 		default:
@@ -259,4 +264,52 @@ func interactiveSearchGithub(ctx context.Context, toolset *research.ResearchTool
 
 	fmt.Println("\n=== Results ===")
 	return formatOutput(os.Stdout, "search-github", result, false)
+}
+
+func interactiveSearchWeb(ctx context.Context, toolset *research.ResearchToolSet, reader *bufio.Reader) error {
+	fmt.Println("\n--- search-web ---")
+
+	fmt.Print("Query: ")
+	query, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return fmt.Errorf("query cannot be empty")
+	}
+
+	fmt.Print("Max results [10]: ")
+	maxResultsStr, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	maxResultsStr = strings.TrimSpace(maxResultsStr)
+
+	maxResults := 10
+	if maxResultsStr != "" {
+		maxResults, err = strconv.Atoi(maxResultsStr)
+		if err != nil {
+			return fmt.Errorf("invalid max results: %w", err)
+		}
+	}
+
+	fmt.Println("\nSearching web...")
+
+	input := map[string]interface{}{
+		"query":       query,
+		"max_results": maxResults,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+
+	result, err := callToolHandler(ctx, toolset, "search_web", inputJSON)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("\n=== Results ===")
+	return formatOutput(os.Stdout, "search-web", result, false)
 }
