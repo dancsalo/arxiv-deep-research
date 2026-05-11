@@ -15,10 +15,10 @@ import (
 	"time"
 )
 
-// openAlexSortMappings maps tool sort values to OpenAlex API sort parameters
+// openAlexSortMappings maps tool sort values to OpenAlex API sort parameters.
+// Currently only supports citation sorting. Add more sort options here when needed.
 var openAlexSortMappings = map[string]string{
 	"cited_by_count": "cited_by_count:desc",
-	// Future: "publication_date": "publication_date:desc",
 }
 
 type ArxivResult struct {
@@ -105,13 +105,17 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 	return string(b), nil
 }
 
+// OpenAlexResult represents a single result from OpenAlex API.
+// Optional fields use pointer types with omitempty to minimize token usage:
+// - nil pointer → field omitted from JSON (no data available)
+// - non-nil pointer → field included with value (data available, may be 0)
 type OpenAlexResult struct {
 	Title        string   `json:"title"`
 	Authors      []string `json:"authors"`
 	DOI          string   `json:"doi"`
 	Abstract     string   `json:"abstract"`
 	Year         int      `json:"year"`
-	CitedByCount *int     `json:"cited_by_count,omitempty"`
+	CitedByCount *int     `json:"cited_by_count,omitempty"` // nil if OpenAlex has no citation data
 }
 
 type openAlexResponse struct {
@@ -148,6 +152,7 @@ func (r *ResearchToolSet) handleSearchOpenAlex(ctx context.Context, input json.R
 	}
 
 	// Validate sort parameter (if provided)
+	// Empty string is treated as no sort parameter (backward compat)
 	var sortParam string
 	if params.Sort != "" {
 		var valid bool

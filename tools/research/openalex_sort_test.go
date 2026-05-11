@@ -118,6 +118,38 @@ func TestSearchOpenAlex_NoSortParameter(t *testing.T) {
 	}
 }
 
+func TestSearchOpenAlex_EmptyStringSortParameter(t *testing.T) {
+	mockResponse := `{"results": [{"title": "Test", "doi": "test", "publication_year": 2020, "cited_by_count": 42, "authorships": [], "abstract_inverted_index": null}]}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify sort parameter is NOT present when explicitly set to empty string
+		sortParam := r.URL.Query().Get("sort")
+		if sortParam != "" {
+			t.Errorf("expected no sort parameter when set to empty string, got: %s", sortParam)
+		}
+		w.Write([]byte(mockResponse))
+	}))
+	defer srv.Close()
+
+	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	// Explicitly pass empty string for sort
+	input, _ := json.Marshal(map[string]any{"query": "test", "sort": ""})
+	result, err := ts.handleSearchOpenAlex(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var results []OpenAlexResult
+	if err := json.Unmarshal([]byte(result), &results); err != nil {
+		t.Fatalf("failed to parse results: %v", err)
+	}
+
+	// Empty string treated as no sort (backward compat)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+}
+
 func TestSearchOpenAlex_InvalidSortValue(t *testing.T) {
 	ts := &ResearchToolSet{client: &http.Client{}}
 	input, _ := json.Marshal(map[string]any{"query": "test", "sort": "invalid_value"})

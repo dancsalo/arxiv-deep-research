@@ -55,7 +55,7 @@ func BuildSearchOpenAlexTool() anthropic.ToolUnionParam {
 		"search_openalex",
 	)
 	t.OfTool.Description = anthropic.String(
-		"Search OpenAlex for published academic works. Returns titles, authors, DOIs, abstracts, and citation counts. Supports sorting by citation count (most cited first) when sort='cited_by_count'. Default: relevance ranking. Always returns citation counts for all papers.",
+		"Search OpenAlex for published academic works. Returns titles, authors, DOIs, abstracts, and citation counts (when available). Use sort='cited_by_count' for descending citation order; default is relevance.",
 	)
 	return t
 }
