@@ -67,6 +67,7 @@ Commands:
   search-openalex <query> [--max-results=N] [--filter=EXPR]
   fetch-pdf <arxiv-id>
   search-github <query> [--max-results=N]
+  search-web <query> [--max-results=N]
 
 Flags:
   --interactive, -i    Launch interactive mode
@@ -78,6 +79,7 @@ Examples:
   tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
   tools-cli fetch-pdf "1706.03762"
   tools-cli search-github "diffusion models pytorch"
+  tools-cli search-web "quantum computing tutorials"
   tools-cli --interactive
 `)
 }

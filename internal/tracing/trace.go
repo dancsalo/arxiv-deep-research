@@ -10,6 +10,8 @@ type Trace struct {
 	SessionID         string  `json:"session_id"`
 	Query             string  `json:"query"`
 	Model             string  `json:"model"`
+	PromptVariant     string  `json:"prompt_variant"`     // NEW: "A", "B", or "C"
+	PromptHash        string  `json:"prompt_hash"`        // NEW: First 8 chars of SHA256
 	StartedAt         time.Time `json:"started_at"`
 	EndedAt           time.Time `json:"ended_at"`
 	DurationMs        int64   `json:"duration_ms"`
@@ -52,11 +54,13 @@ type ToolCall struct {
 }
 
 type Config struct {
-	Dir       string
-	SessionID string
-	Query     string
-	Model     string
-	Logger    *slog.Logger
+	Dir           string
+	SessionID     string
+	Query         string
+	Model         string
+	PromptVariant string   // NEW: "A", "B", or "C"
+	PromptHash    string   // NEW: First 8 chars of SHA256
+	Logger        *slog.Logger
 }
 
 func (cfg Config) Enabled() bool {

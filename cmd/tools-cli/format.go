@@ -29,7 +29,7 @@ func formatOutput(w io.Writer, toolName string, result string, asJSON bool) erro
 
 	// Format based on tool type
 	switch toolName {
-	case "search-arxiv", "search-openalex":
+	case "search-arxiv", "search-openalex", "search-web":
 		return formatSearchResults(w, result)
 	case "fetch-pdf":
 		return formatPdfResult(w, result)
