@@ -392,12 +392,16 @@ func (r *ResearchToolSet) handleSearchGithub(ctx context.Context, input json.Raw
 	if params.MaxResults <= 0 {
 		params.MaxResults = 5
 	}
+	// Cap at 5 results to limit token usage and response size per product decision
+	// (see plan: phase 1 scoped to 5 results for MVP validation)
 	if params.MaxResults > 5 {
 		params.MaxResults = 5
 	}
 
 	// Add quality filters to query: min 100 stars, updated in last 2 years
-	enhancedQuery := fmt.Sprintf("%s stars:>100 pushed:>2024-01-01", params.Query)
+	// Calculate 2 years ago dynamically to maintain recency invariant
+	twoYearsAgo := time.Now().AddDate(-2, 0, 0).Format("2006-01-02")
+	enhancedQuery := fmt.Sprintf("%s stars:>100 pushed:>%s", params.Query, twoYearsAgo)
 
 	// Build GitHub API search URL
 	apiURL := fmt.Sprintf("%s/search/repositories?q=%s&sort=stars&order=desc&per_page=%d",
@@ -451,6 +455,19 @@ func (r *ResearchToolSet) executeGithubSearch(ctx context.Context, apiURL, origi
 
 	// Handle rate limiting
 	if resp.StatusCode == 403 || resp.StatusCode == 429 {
+		// Check for Retry-After header first (secondary rate limit or explicit retry)
+		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+			// Retry-After can be seconds (integer) or HTTP date
+			if seconds, err := strconv.Atoi(retryAfter); err == nil {
+				retryTime := time.Now().Add(time.Duration(seconds) * time.Second)
+				return toolError(fmt.Sprintf("GitHub API rate limit hit. Retry after %d seconds (at %s).",
+					seconds, retryTime.Format(time.RFC3339)), true), nil
+			}
+			// Fall back to displaying raw value if not an integer
+			return toolError(fmt.Sprintf("GitHub API rate limit hit. Retry after: %s", retryAfter), true), nil
+		}
+
+		// Check primary rate limit
 		if rateLimitRemaining == "0" {
 			// Parse Unix timestamp and format for human readability
 			resetUnix, parseErr := strconv.ParseInt(rateLimitReset, 10, 64)
@@ -462,10 +479,9 @@ func (r *ResearchToolSet) executeGithubSearch(ctx context.Context, apiURL, origi
 			return toolError(fmt.Sprintf("GitHub API rate limit exceeded (60/hr unauthenticated). Resets at %s (in ~%d minutes).",
 				resetTime.Format(time.RFC3339), minutesUntilReset), true), nil
 		}
-		// Check for Retry-After header (secondary rate limit)
-		if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-			return toolError(fmt.Sprintf("GitHub API secondary rate limit hit. Retry after %s seconds.", retryAfter), true), nil
-		}
+
+		// Rate limit response but no clear reason
+		return toolError(fmt.Sprintf("GitHub API rate limit response (status %d) but limit headers unclear", resp.StatusCode), true), nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -501,6 +517,12 @@ func (r *ResearchToolSet) executeGithubSearch(ctx context.Context, apiURL, origi
 			lang = "Unknown"
 		}
 
+		// Handle nil Topics slice
+		topics := item.Topics
+		if topics == nil {
+			topics = []string{}
+		}
+
 		results = append(results, GitHubRepoResult{
 			Name:        item.Name,
 			FullName:    item.FullName,
@@ -509,7 +531,7 @@ func (r *ResearchToolSet) executeGithubSearch(ctx context.Context, apiURL, origi
 			URL:         item.HTMLURL,
 			Language:    lang,
 			License:     licenseName,
-			Topics:      item.Topics,
+			Topics:      topics,
 			UpdatedAt:   item.UpdatedAt,
 			IsArchived:  false, // already filtered
 		})

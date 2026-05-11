@@ -95,7 +95,7 @@ func BuildSearchGithubTool() anthropic.ToolUnionParam {
 		"search_github_repos",
 	)
 	t.OfTool.Description = anthropic.String(
-		"Search GitHub repositories for code implementations, sorted by stars and filtered for quality (>100 stars, updated within 2 years). Returns repository name, description, star count, language, license, topics, last updated, and URL. Use when user explicitly asks for code implementations or GitHub repos.",
+		"Search GitHub repositories for code implementations, sorted by stars. IMPORTANT: Results are automatically filtered to show only popular, actively-maintained repos (>100 stars, updated within 2 years, not archived). Returns repository name, description, star count, language, license, topics, last updated, and URL. Use when user asks for established, production-ready implementations or popular GitHub repos. NOT suitable for finding experimental, niche, or small projects.",
 	)
 	return t
 }

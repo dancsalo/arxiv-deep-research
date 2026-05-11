@@ -66,8 +66,9 @@ func TestHandleSearchGithub_Success(t *testing.T) {
 		if !strings.Contains(query, "stars:>100") {
 			t.Errorf("query missing stars filter: %s", query)
 		}
-		if !strings.Contains(query, "pushed:>2024-01-01") {
-			t.Errorf("query missing recency filter: %s", query)
+		// Check for dynamic date filter (pushed:>YYYY-MM-DD format, not specific date)
+		if !strings.Contains(query, "pushed:>") || !strings.Contains(query, "20") {
+			t.Errorf("query missing recency filter (pushed:>YYYY-MM-DD): %s", query)
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -261,5 +262,122 @@ func TestHandleSearchGithub_RetryOn500(t *testing.T) {
 	}
 	if strings.Contains(result, "error") {
 		t.Errorf("expected success after retry, got error: %s", result)
+	}
+}
+
+func TestHandleSearchGithub_EmptyResults(t *testing.T) {
+	mockResponse := githubSearchResponse{
+		TotalCount: 0,
+		Items:      []githubRepoItem{},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "59")
+		w.Header().Set("X-RateLimit-Reset", "1715000000")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	toolset := newResearchToolSetWithBase(&http.Client{}, server.URL)
+	result, err := toolset.executeGithubSearch(context.Background(), server.URL, "nonexistent-query")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var repos []GitHubRepoResult
+	if err := json.Unmarshal([]byte(result), &repos); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+
+	if len(repos) != 0 {
+		t.Errorf("got %d results, want 0 for empty response", len(repos))
+	}
+}
+
+func TestHandleSearchGithub_NilTopics(t *testing.T) {
+	mockResponse := githubSearchResponse{
+		Items: []githubRepoItem{
+			{
+				Name:      "repo-without-topics",
+				FullName:  "user/repo-without-topics",
+				HTMLURL:   "https://github.com/user/repo-without-topics",
+				Stars:     200,
+				Topics:    nil, // GitHub may omit this field
+				Archived:  false,
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "59")
+		w.Header().Set("X-RateLimit-Reset", "1715000000")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	toolset := newResearchToolSetWithBase(&http.Client{}, server.URL)
+	result, err := toolset.executeGithubSearch(context.Background(), server.URL, "test")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var repos []GitHubRepoResult
+	if err := json.Unmarshal([]byte(result), &repos); err != nil {
+		t.Fatalf("failed to parse result: %v", err)
+	}
+
+	if repos[0].Topics == nil {
+		t.Error("Topics should be empty array, not nil")
+	}
+	if len(repos[0].Topics) != 0 {
+		t.Errorf("Topics should be empty array, got length %d", len(repos[0].Topics))
+	}
+}
+
+func TestHandleSearchGithub_MalformedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-RateLimit-Remaining", "59")
+		w.Header().Set("X-RateLimit-Reset", "1715000000")
+		w.Write([]byte(`{"items": [{"invalid json`))
+	}))
+	defer server.Close()
+
+	toolset := newResearchToolSetWithBase(&http.Client{}, server.URL)
+	result, err := toolset.executeGithubSearch(context.Background(), server.URL, "test")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(result, "error") || !strings.Contains(result, "parse") {
+		t.Errorf("expected parse error, got: %s", result)
+	}
+}
+
+func TestHandleSearchGithub_RetryAfterHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "60")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", "1715000000")
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"message": "rate limit"}`))
+	}))
+	defer server.Close()
+
+	toolset := newResearchToolSetWithBase(&http.Client{}, server.URL)
+	result, err := toolset.executeGithubSearch(context.Background(), server.URL, "test")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should prioritize Retry-After over X-RateLimit-Reset
+	if !strings.Contains(result, "Retry after 60 seconds") {
+		t.Errorf("expected Retry-After message, got: %s", result)
 	}
 }
