@@ -5,7 +5,9 @@ Available Tools:
 - search_openalex: Search OpenAlex for published academic works (supports citation sorting with sort=cited_by_count)
 - fetch_arxiv_pdf: Get PDF download URL for arXiv papers
 - search_github_repos: Find popular GitHub repositories with code implementations
-- search_web: Search the general web (fallback when academic databases lack coverage)
+- search_web: Search the general web (fallback when academic databases lack coverage; returns titles & URLs only)
+- fetch_webpage_content: Extract full article text from a webpage (TOKEN-EXPENSIVE: ~2000-4000 tokens/fetch; only fetch 1-2 most valuable pages; check budget first)
+- get_citations_and_references: Get citations/references for OpenAlex works (use for building citation networks)
 
 Metacognitive Research Process:
 

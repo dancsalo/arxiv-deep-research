@@ -129,7 +129,7 @@ func BuildSearchWebTool() anthropic.ToolUnionParam {
 		"search_web",
 	)
 	t.OfTool.Description = anthropic.String(
-		"Search the general web. Returns titles, snippets, and URLs. Use as fallback when arXiv/OpenAlex lack coverage. NOT reliable for 'most cited papers' - use search_openalex with citation sorting instead. WARNING: May be unreliable due to bot detection.",
+		"Search the general web. Returns titles and URLs only (no snippets). Use as fallback when arXiv/OpenAlex lack coverage. NOT reliable for 'most cited papers' - use search_openalex with citation sorting instead. WARNING: May be unreliable due to bot detection.",
 	)
 	return t
 }

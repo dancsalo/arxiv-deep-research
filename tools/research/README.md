@@ -12,6 +12,7 @@ Research tool implementations for the arXiv Deep Research agent. These tools ena
 | `search_github_repos` | Find popular GitHub repositories with code implementations | 60 req/hr (no auth) |
 | `search_web` | Search the general web using DuckDuckGo | No limit |
 | `get_citations_and_references` | Get citation and reference data from OpenAlex | No limit |
+| `fetch_webpage_content` | Fetch and extract main article content from a webpage | 1 req/2 sec |
 
 ## Tool Details
 
@@ -165,6 +166,38 @@ tools-cli get-citations "W2741809807" --direction cited_by --max-results 20
 
 **Implementation:** `handlers.go:handleGetCitationsAndReferences()`
 
+---
+
+### fetch_webpage_content
+
+Fetches and extracts main article content from a webpage using readability extraction.
+
+**Input:**
+- `url` (string, required): URL of webpage to fetch
+- `max_length` (integer, optional): Maximum content length in characters (default: 8000, max: 15000)
+
+**Output:**
+- Object with url, title, author (if available), length, excerpt, text_content, and truncated flag
+
+**Example:**
+```bash
+tools-cli fetch-webpage "https://jalammar.github.io/illustrated-transformer/"
+tools-cli fetch-webpage "https://example.com/article" --max-length 10000
+```
+
+**Use case:** Use after search_web to get full article text when snippets are empty or you need more detail. Returns cleaned text with HTML/ads/navigation removed. Works best on article/blog pages.
+
+**Implementation:** `handlers.go:handleFetchWebpageContent()`
+
+**Rate limiting:** 2-second delay enforced per request
+
+**Important:** 
+- **Token cost**: ~2000-4000 tokens per fetch (depending on max_length)
+- **Budget aware**: Only fetch promising pages - each fetch consumes significant tokens
+- **Limitations**: May fail on JavaScript-rendered sites, paywalled content, or sites that block scrapers
+- **Best for**: Blog posts, articles, documentation pages
+- **Not suitable for**: Web apps, dynamic sites, paywalled journals
+
 ## Architecture
 
 ### Package Structure
@@ -194,6 +227,7 @@ tools/research/
 - `BuildSearchGithubReposTool()` - Claude API tool definition for GitHub search
 - `BuildSearchWebTool()` - Claude API tool definition for web search
 - `BuildGetCitationsAndReferencesTool()` - Claude API tool definition for citations
+- `BuildFetchWebpageContentTool()` - Claude API tool definition for webpage content extraction
 
 **Handlers** (`handlers.go`)
 - Implement the actual tool logic

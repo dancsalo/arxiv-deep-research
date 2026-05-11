@@ -93,6 +93,9 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 	u := fmt.Sprintf("https://export.arxiv.org/api/query?search_query=%s&max_results=%d",
 		searchQuery, params.MaxResults)
 
+	// Rate limit: max 3 requests per second per arXiv TOS
+	r.arxivRateLimiter.Wait()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return toolError("request creation failed: "+err.Error(), false), nil
@@ -315,6 +318,9 @@ func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.Ra
 
 	// Construct PDF URL
 	pdfURL := fmt.Sprintf("https://export.arxiv.org/pdf/%s.pdf", normalized)
+
+	// Rate limit: max 3 requests per second per arXiv TOS
+	r.arxivRateLimiter.Wait()
 
 	// Validate URL (HEAD request to check existence)
 	// Convert httpClient interface to *http.Client for validateArxivPdf
@@ -618,9 +624,8 @@ func (r *ResearchToolSet) executeGithubSearch(ctx context.Context, apiURL, origi
 }
 
 type WebSearchResult struct {
-	Title   string `json:"title"`
-	Snippet string `json:"snippet"`
-	URL     string `json:"url"`
+	Title string `json:"title"`
+	URL   string `json:"url"`
 }
 
 // cleanSearchURL removes DuckDuckGo tracking parameters from search result URLs
@@ -685,9 +690,9 @@ func hasClass(n *html.Node, class string) bool {
 	return false
 }
 
-// extractResult extracts title, snippet, and URL from a single result div
+// extractResult extracts title and URL from a single result div
 func extractResult(div *html.Node) *WebSearchResult {
-	var title, snippet, rawURL string
+	var title, rawURL string
 
 	var visit func(*html.Node)
 	visit = func(n *html.Node) {
@@ -704,11 +709,6 @@ func extractResult(div *html.Node) *WebSearchResult {
 						}
 					}
 				}
-			case "div":
-				// Snippet div has class="result__snippet"
-				if hasClass(n, "result__snippet") {
-					snippet = getTextContent(n)
-				}
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -722,9 +722,8 @@ func extractResult(div *html.Node) *WebSearchResult {
 	}
 
 	return &WebSearchResult{
-		Title:   strings.TrimSpace(title),
-		Snippet: strings.TrimSpace(snippet),
-		URL:     cleanSearchURL(rawURL),
+		Title: strings.TrimSpace(title),
+		URL:   cleanSearchURL(rawURL),
 	}
 }
 

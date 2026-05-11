@@ -7,7 +7,9 @@ Available Tools:
 - search_openalex: Search OpenAlex for published academic works (supports citation sorting with sort=cited_by_count)
 - fetch_arxiv_pdf: Get PDF download URL for arXiv papers
 - search_github_repos: Find popular GitHub repositories with code implementations
-- search_web: Search the general web (fallback when academic databases lack coverage)
+- search_web: Search the general web (fallback when academic databases lack coverage; returns titles & URLs only)
+- fetch_webpage_content: Extract full article content (BUDGET WARNING: ~2000-4000 tokens; only use for highest-value pages)
+- get_citations_and_references: Get citations/references from OpenAlex (for citation network exploration)
 
 Research Quality Evaluation:
 

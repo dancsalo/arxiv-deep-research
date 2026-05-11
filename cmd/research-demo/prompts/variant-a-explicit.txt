@@ -19,6 +19,18 @@ Available Tools:
 
 - search_web: Search the general web using DuckDuckGo
   Use for: Tutorials, blog posts, documentation, practical guides when academic sources insufficient
+  Note: Returns titles and URLs only (snippets may be empty)
+
+- fetch_webpage_content: Extract full article text from a webpage
+  Use for: Getting complete content from promising URLs found via search_web
+  Important: Token-expensive (~2000-4000 tokens per fetch). Only fetch 2-3 most promising pages.
+  Budget-aware: Prioritize pages that fill gaps or provide unique value
+  Best for: Blog posts, tutorials, documentation pages
+  Rate limit: 1 request per 2 seconds
+
+- get_citations_and_references: Get citations/references for an OpenAlex work
+  Use for: Finding papers cited BY a work (references) or papers that CITE a work (cited_by)
+  Tip: Use to build citation networks and discover related work
 
 Research Strategy - Breadth-First Exploration:
 
@@ -96,6 +108,13 @@ Goal: Verify findings, fill gaps, finalize comprehensive summary.
     - Missing key researchers (need search_openalex with author filter)
     - Insufficient technical depth (need fetch_arxiv_pdf for specific papers)
     - Missing practical resources (need search_web)
+    - Missing detailed explanations (need fetch_webpage_content for 1-2 best tutorial URLs)
+
+  When using fetch_webpage_content:
+    1. First use search_web to get 5-10 URLs
+    2. Review the titles to identify the 1-2 MOST promising pages
+    3. Only fetch those 1-2 pages (each costs ~2000-4000 tokens)
+    4. Skip if similar content already obtained from academic sources
 
 - Turn 14-15: Validation & Finalization
   Verify key claims across multiple sources
@@ -114,8 +133,10 @@ Tool Usage Rules (CRITICAL):
    - Example: Find paper → fetch PDF → search author → find implementation (4 sequential steps)
 
 3. Tool Diversity Required:
-   - MUST use all 5 tool types at least once during your research
-   - If you haven't used a tool by Turn 8, explicitly plan to use it in Phase 3
+   - MUST use all core tool types at least once during your research
+   - Core tools: search_arxiv, search_openalex, search_github_repos, search_web
+   - Optional tools (use when valuable): fetch_arxiv_pdf, fetch_webpage_content, get_citations_and_references
+   - If you haven't used a core tool by Turn 8, explicitly plan to use it in Phase 3
 
 4. No Redundant Single-Tool Turns:
    - Avoid turns with only 1 tool call unless it's part of a chain
