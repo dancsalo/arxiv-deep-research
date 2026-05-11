@@ -18,106 +18,18 @@ make run
 
 ## Research Tools
 
+The research agent has access to multiple tools for searching academic literature and code:
+
 | Tool | Purpose | Rate Limits |
 |------|---------|-------------|
 | `search_arxiv` | Search arXiv for academic preprints | No limit |
 | `search_openalex` | Search OpenAlex for published academic works | No limit |
 | `fetch_arxiv_pdf` | Get PDF download URL for arXiv papers | 1 req/3 sec |
-| `search_github_repos` | Find popular GitHub repositories with code implementations | 60 req/hr (no auth) |
+| `search_github_repos` | Find popular GitHub repositories | 60 req/hr (no auth) |
 | `search_web` | Search the general web using DuckDuckGo | No limit |
+| `get_citations_and_references` | Get citations and references from OpenAlex | No limit |
 
-## Tool Details
-
-### search_arxiv
-
-Searches arXiv for academic preprints.
-
-**Input:**
-- `query` (string, required): Search query
-- `max_results` (integer, optional): Maximum results (default: 10)
-
-**Output:**
-- Array of papers with title, authors, abstract, publication date, arXiv ID, PDF URL
-
-**Example:**
-```bash
-tools-cli search-arxiv "attention mechanism" --max-results 5
-```
-
-**Use case:** Finding recent papers on a specific topic
-
-### search_openalex
-
-Searches OpenAlex for published academic works with advanced filtering support.
-
-**Input:**
-- `query` (string, required): Search query
-- `max_results` (integer, optional): Maximum results (default: 10)
-- `filter` (string, optional): OpenAlex filter expression (e.g., "publication_year:>2023")
-
-**Output:**
-- Array of works with title, authors, abstract, publication date, DOI, citations count, PDF URL
-
-**Example:**
-```bash
-tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
-```
-
-**Use case:** Finding highly-cited recent work with specific filters
-
-### fetch_arxiv_pdf
-
-Gets the PDF download URL for an arXiv paper (with 3-second rate limiting).
-
-**Input:**
-- `arxiv_id` (string, required): arXiv identifier (e.g., "2301.00001", "arXiv:2301.00001", "astro-ph/9901234")
-
-**Output:**
-- Object with arxiv_id and pdf_url
-
-**Example:**
-```bash
-tools-cli fetch-pdf "1706.03762"
-```
-
-**Use case:** Getting downloadable PDF URLs for papers
-
-### search_github_repos
-
-Finds popular GitHub repositories related to a search query.
-
-**Input:**
-- `query` (string, required): GitHub search query (supports GitHub search syntax)
-- `max_results` (integer, optional): Maximum results (default: 5, max: 5)
-
-**Output:**
-- Array of repositories with name, description, URL, stars, language, topics
-
-**Example:**
-```bash
-tools-cli search-github "diffusion models pytorch"
-tools-cli search-github "transformer language:python stars:>100"
-```
-
-**Use case:** Finding reference implementations and popular codebases
-
-### search_web
-
-Searches the general web using DuckDuckGo, useful as a fallback when academic databases lack coverage.
-
-**Input:**
-- `query` (string, required): Web search query
-- `max_results` (integer, optional): Maximum results (default: 10)
-
-**Output:**
-- Array of web results with title, URL, and snippet
-
-**Example:**
-```bash
-tools-cli search-web "quantum computing tutorials"
-```
-
-**Use case:** Finding tutorials, documentation, and general information when academic sources are insufficient
+**For detailed tool documentation**, including input/output schemas, examples, and implementation details, see [tools/research/README.md](tools/research/README.md).
 
 ## Research Agent Features
 
