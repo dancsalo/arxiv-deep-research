@@ -2,123 +2,92 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/bedrock"
-	"github.com/anthropics/anthropic-sdk-go/option"
-
-	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
-	"github.com/dancsalo/arxiv-deep-research/internal/ctxmgr"
-	"github.com/dancsalo/arxiv-deep-research/internal/registry"
-	"github.com/dancsalo/arxiv-deep-research/internal/tracing"
-	"github.com/dancsalo/arxiv-deep-research/server"
+	"github.com/dancsalo/arxiv-deep-research/tools/research"
 )
 
-type sdkAdapter struct {
-	client *anthropic.Client
-}
-
-func (a *sdkAdapter) CreateMessage(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error) {
-	return a.client.Messages.New(ctx, params)
-}
+var (
+	interactive = flag.Bool("interactive", false, "launch interactive mode")
+	interactiveShort = flag.Bool("i", false, "launch interactive mode (shorthand)")
+	jsonOutput = flag.Bool("json", false, "output results as JSON")
+	helpFlag = flag.Bool("help", false, "show help")
+	helpShort = flag.Bool("h", false, "show help (shorthand)")
+)
 
 func main() {
-	addr := flag.String("addr", ":8080", "listen address")
-	useBedrock := flag.Bool("bedrock", true, "use AWS Bedrock")
-	model := flag.String("model", "", "model ID override")
-	traceDir := flag.String("trace-dir", ".traces", "directory for trace files (empty to disable)")
+	flag.Usage = printUsage
 	flag.Parse()
 
+	if *helpFlag || *helpShort {
+		printUsage()
+		os.Exit(0)
+	}
+
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	toolset := research.NewResearchToolSet(httpClient)
 	ctx := context.Background()
-	var opts []option.RequestOption
-	if *useBedrock {
-		opts = append(opts, bedrock.WithLoadDefaultConfig(ctx))
-	}
-	apiClient := anthropic.NewClient(opts...)
 
-	var modelID anthropic.Model
-	if *model != "" {
-		modelID = anthropic.Model(*model)
-	} else if *useBedrock {
-		modelID = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
-	} else {
-		modelID = anthropic.ModelClaudeHaiku4_5
+	if *interactive || *interactiveShort {
+		if err := runInteractive(ctx, toolset); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		return
 	}
 
-	factory := func(query string, logger *slog.Logger) (*agentic.Loop, func(), error) {
-		sessionID := fmt.Sprintf("web-%d", time.Now().UnixNano())
-		traceCfg := tracing.Config{
-			Dir:       *traceDir,
-			SessionID: sessionID,
-			Query:     query,
-			Model:     string(modelID),
-			Logger:    logger,
-		}
-		hooks, recorder := tracing.NewTracingHooks(traceCfg)
-
-		var client agentic.MessageClient = &sdkAdapter{client: &apiClient}
-		if traceCfg.Enabled() {
-			client = &tracing.TracedClient{Inner: client, Recorder: recorder}
-		}
-
-		systemBlocks := []anthropic.TextBlockParam{
-			{Text: "You are a helpful research assistant.", Type: "text"},
-		}
-
-		initialMsg := anthropic.NewUserMessage(anthropic.NewTextBlock(query))
-		manager := ctxmgr.NewContextManager(ctxmgr.ContextManagerConfig{
-			Estimator: ctxmgr.NewTokenEstimator(nil, "", false),
-			Budget: &ctxmgr.ContextBudget{
-				ModelContextLimit: 200000,
-				MaxOutputTokens:   8192,
-				SafetyMargin:      2000,
-			},
-			System:  systemBlocks,
-			NowFunc: time.Now,
-		}, initialMsg)
-
-		reg := registry.NewToolRegistry()
-		reg.Register("finish", agentic.BuildFinishTool(),
-			func(_ context.Context, input json.RawMessage) (string, error) {
-				return string(input), nil
-			})
-
-		loop := agentic.NewLoop(
-			client,
-			manager,
-			reg,
-			nil,
-			agentic.LoopConfig{
-				MaxTurns:        20,
-				MaxCostUSD:      0.50,
-				Model:           modelID,
-				SessionID:       sessionID,
-				FinishTool:      "finish",
-				DefaultPriority: ctxmgr.PriorityCore,
-				Hooks:           hooks,
-				Logger:          logger,
-			},
-			systemBlocks,
-		)
-
-		cleanup := func() {
-			if err := recorder.Flush(); err != nil {
-				logger.Error("failed to flush trace", "err", err)
-			}
-		}
-		return loop, cleanup, nil
-	}
-
-	srv := server.NewServer(factory, *addr)
-	fmt.Printf("Listening on %s\n", *addr)
-	if err := srv.ListenAndServe(); err != nil {
-		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+	args := flag.Args()
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: no command specified")
+		printUsage()
 		os.Exit(1)
 	}
+
+	command := args[0]
+	commandArgs := args[1:]
+
+	if err := executeCommand(ctx, toolset, command, commandArgs); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Fprintf(os.Stderr, `tools-cli - Research Tools Command Line Interface
+
+Usage:
+  tools-cli [flags] <command> [args]
+
+Commands:
+  search-arxiv <query> [--max-results=N]
+  search-openalex <query> [--max-results=N] [--filter=EXPR]
+  fetch-pdf <arxiv-id>
+  search-github <query> [--max-results=N]
+
+Flags:
+  --interactive, -i    Launch interactive mode
+  --json              Output results as JSON
+  --help, -h          Show this help
+
+Examples:
+  tools-cli search-arxiv "attention mechanism"
+  tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
+  tools-cli fetch-pdf "1706.03762"
+  tools-cli search-github "diffusion models pytorch"
+  tools-cli --interactive
+`)
+}
+
+func runInteractive(ctx context.Context, toolset research.ResearchToolSet) error {
+	// Placeholder implementation - will need to be filled in
+	return fmt.Errorf("interactive mode not yet implemented")
+}
+
+func executeCommand(ctx context.Context, toolset research.ResearchToolSet, command string, args []string) error {
+	// Placeholder implementation - will need to be filled in
+	return fmt.Errorf("command %s not yet implemented", command)
 }
