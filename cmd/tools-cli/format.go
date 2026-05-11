@@ -1,231 +1,151 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
-	"text/template"
 )
 
-// Stub type definitions for compilation
-type SearchResult struct {
-	Title           string
-	Authors         string
-	PublicationDate string
-	URL             string
-	Abstract        string
-}
+// formatOutput formats tool results for display
+func formatOutput(w io.Writer, toolName string, result string, asJSON bool) error {
+	if asJSON {
+		// Just write the raw JSON result
+		fmt.Fprintln(w, result)
+		return nil
+	}
 
-type PdfResult struct {
-	Title         string
-	SourceURL     string
-	LocalPath     string
-	PageCount     int
-	ExtractedText string
-}
+	// Parse result to determine format
+	var resultData map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &resultData); err != nil {
+		return fmt.Errorf("failed to parse result: %w", err)
+	}
 
-type GithubSearchResult struct {
-	FullName      string
-	Description   string
-	Language      string
-	StarCount     int
-	URL           string
-	TopicTags     []string
-}
+	// Check for errors
+	if errMsg, ok := resultData["error"].(string); ok {
+		fmt.Fprintf(w, "Error: %s\n", errMsg)
+		if recoverable, ok := resultData["recoverable"].(bool); ok && recoverable {
+			fmt.Fprintln(w, "(This error is recoverable - you can retry)")
+		}
+		return nil
+	}
 
-type OutputFormat string
-
-const (
-	FormatHuman OutputFormat = "human"
-	FormatJSON  OutputFormat = "json"
-)
-
-type FormatterOptions struct {
-	Format      OutputFormat
-	Writer      io.Writer
-	ToolName    string
-	RawResults  interface{}
-	PrettyPrint bool
-}
-
-func formatOutput(opts FormatterOptions) error {
-	switch opts.ToolName {
+	// Format based on tool type
+	switch toolName {
 	case "search-arxiv", "search-openalex":
-		return formatSearchResults(opts)
+		return formatSearchResults(w, resultData)
 	case "fetch-pdf":
-		return formatPdfResult(opts)
+		return formatPdfResult(w, resultData)
 	case "search-github":
-		return formatGithubResults(opts)
+		return formatGithubResults(w, resultData)
 	default:
-		return fmt.Errorf("unsupported tool: %s", opts.ToolName)
+		return fmt.Errorf("unknown tool: %s", toolName)
 	}
 }
 
-func formatSearchResults(opts FormatterOptions) error {
-	// Cast to the expected type for search results
-	results, ok := opts.RawResults.([]SearchResult)
+func formatSearchResults(w io.Writer, data map[string]interface{}) error {
+	query, _ := data["query"].(string)
+	results, ok := data["results"].([]interface{})
 	if !ok {
-		return fmt.Errorf("invalid results type for search tool")
+		return fmt.Errorf("invalid results format")
 	}
 
-	switch opts.Format {
-	case FormatHuman:
-		tmpl := template.Must(template.New("search").Parse(`
-{{- range .}}
-Title: {{.Title}}
-Authors: {{.Authors}}
-Published: {{.PublicationDate}}
-URL: {{.URL}}
-Abstract: {{.Abstract | truncate 250}}
+	fmt.Fprintf(w, "=== Search Results for %q ===\n\n", query)
 
-{{end -}}`))
+	for i, item := range results {
+		paper, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
 
-		funcMap := template.FuncMap{
-			"truncate": func(s string, length int) string {
-				if len(s) <= length {
-					return s
+		fmt.Fprintf(w, "%d. %s\n", i+1, paper["title"])
+
+		if authors, ok := paper["authors"].([]interface{}); ok && len(authors) > 0 {
+			authorStrs := make([]string, 0, len(authors))
+			for _, a := range authors {
+				if author, ok := a.(string); ok {
+					authorStrs = append(authorStrs, author)
 				}
-				return s[:length] + "..."
-			},
+			}
+			if len(authorStrs) > 0 {
+				fmt.Fprintf(w, "   Authors: %s\n", strings.Join(authorStrs, ", "))
+			}
 		}
-		tmpl.Funcs(funcMap)
 
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, results); err != nil {
-			return fmt.Errorf("error formatting human output: %w", err)
+		if published, ok := paper["published"].(string); ok {
+			fmt.Fprintf(w, "   Published: %s\n", published)
 		}
-		_, err := opts.Writer.Write(buf.Bytes())
-		return err
 
-	case FormatJSON:
-		var jsonOutput []byte
-		var err error
-		if opts.PrettyPrint {
-			jsonOutput, err = json.MarshalIndent(results, "", "  ")
-		} else {
-			jsonOutput, err = json.Marshal(results)
+		if abstract, ok := paper["abstract"].(string); ok {
+			// Truncate long abstracts
+			if len(abstract) > 200 {
+				abstract = abstract[:197] + "..."
+			}
+			fmt.Fprintf(w, "   Abstract: %s\n", abstract)
 		}
-		if err != nil {
-			return fmt.Errorf("error marshaling JSON: %w", err)
-		}
-		_, err = opts.Writer.Write(jsonOutput)
-		return err
 
-	default:
-		return fmt.Errorf("unsupported output format: %s", opts.Format)
+		if url, ok := paper["url"].(string); ok {
+			fmt.Fprintf(w, "   URL: %s\n", url)
+		}
+
+		fmt.Fprintln(w)
 	}
+
+	fmt.Fprintf(w, "Found %d results (showing %d)\n", len(results), len(results))
+	return nil
 }
 
-func formatPdfResult(opts FormatterOptions) error {
-	// Cast to the expected type for PDF result
-	result, ok := opts.RawResults.(types.PdfResult)
-	if !ok {
-		return fmt.Errorf("invalid results type for PDF tool")
-	}
+func formatPdfResult(w io.Writer, data map[string]interface{}) error {
+	arxivID, _ := data["arxiv_id"].(string)
+	pdfURL, _ := data["pdf_url"].(string)
 
-	switch opts.Format {
-	case FormatHuman:
-		tmpl := template.Must(template.New("pdf").Parse(`
-PDF Details:
-Title: {{.Title}}
-Source URL: {{.SourceURL}}
-Local Path: {{.LocalPath}}
-Pages: {{.PageCount}}
-Extracted Text Length: {{len .ExtractedText}} characters
-
-Text Preview:
-{{.ExtractedText | truncate 500}}
-`))
-
-		funcMap := template.FuncMap{
-			"truncate": func(s string, length int) string {
-				if len(s) <= length {
-					return s
-				}
-				return s[:length] + "..."
-			},
-		}
-		tmpl.Funcs(funcMap)
-
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, result); err != nil {
-			return fmt.Errorf("error formatting human output: %w", err)
-		}
-		_, err := opts.Writer.Write(buf.Bytes())
-		return err
-
-	case FormatJSON:
-		var jsonOutput []byte
-		var err error
-		if opts.PrettyPrint {
-			jsonOutput, err = json.MarshalIndent(result, "", "  ")
-		} else {
-			jsonOutput, err = json.Marshal(result)
-		}
-		if err != nil {
-			return fmt.Errorf("error marshaling JSON: %w", err)
-		}
-		_, err = opts.Writer.Write(jsonOutput)
-		return err
-
-	default:
-		return fmt.Errorf("unsupported output format: %s", opts.Format)
-	}
+	fmt.Fprintf(w, "=== arXiv PDF URL ===\n\n")
+	fmt.Fprintf(w, "arXiv ID: %s\n", arxivID)
+	fmt.Fprintf(w, "PDF URL:  %s\n", pdfURL)
+	return nil
 }
 
-func formatGithubResults(opts FormatterOptions) error {
-	// Cast to the expected type for GitHub search results
-	results, ok := opts.RawResults.([]types.GithubSearchResult)
+func formatGithubResults(w io.Writer, data map[string]interface{}) error {
+	query, _ := data["query"].(string)
+	results, ok := data["results"].([]interface{})
 	if !ok {
-		return fmt.Errorf("invalid results type for GitHub search tool")
+		return fmt.Errorf("invalid results format")
 	}
 
-	switch opts.Format {
-	case FormatHuman:
-		tmpl := template.Must(template.New("github").Parse(`
-{{- range .}}
-Repository: {{.FullName}}
-Description: {{.Description}}
-Language: {{.Language}}
-Stars: {{.StarCount}}
-URL: {{.URL}}
-{{- if .TopicTags}}
-Topics: {{.TopicTags | join ", "}}
-{{- end}}
+	fmt.Fprintf(w, "=== GitHub Repository Search for %q ===\n\n", query)
 
-{{end -}}`))
-
-		funcMap := template.FuncMap{
-			"join": func(elems []string, sep string) string {
-				return strings.Join(elems, sep)
-			},
+	for i, item := range results {
+		repo, ok := item.(map[string]interface{})
+		if !ok {
+			continue
 		}
-		tmpl.Funcs(funcMap)
 
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, results); err != nil {
-			return fmt.Errorf("error formatting human output: %w", err)
-		}
-		_, err := opts.Writer.Write(buf.Bytes())
-		return err
+		name, _ := repo["name"].(string)
+		fmt.Fprintf(w, "%d. %s\n", i+1, name)
 
-	case FormatJSON:
-		var jsonOutput []byte
-		var err error
-		if opts.PrettyPrint {
-			jsonOutput, err = json.MarshalIndent(results, "", "  ")
-		} else {
-			jsonOutput, err = json.Marshal(results)
+		if desc, ok := repo["description"].(string); ok && desc != "" {
+			fmt.Fprintf(w, "   Description: %s\n", desc)
 		}
-		if err != nil {
-			return fmt.Errorf("error marshaling JSON: %w", err)
-		}
-		_, err = opts.Writer.Write(jsonOutput)
-		return err
 
-	default:
-		return fmt.Errorf("unsupported output format: %s", opts.Format)
+		if stars, ok := repo["stars"].(float64); ok {
+			fmt.Fprintf(w, "   Stars: %.0f\n", stars)
+		}
+
+		if lang, ok := repo["language"].(string); ok && lang != "" {
+			fmt.Fprintf(w, "   Language: %s\n", lang)
+		}
+
+		if license, ok := repo["license"].(string); ok && license != "" {
+			fmt.Fprintf(w, "   License: %s\n", license)
+		}
+
+		if url, ok := repo["url"].(string); ok {
+			fmt.Fprintf(w, "   URL: %s\n", url)
+		}
+
+		fmt.Fprintln(w)
 	}
+
+	fmt.Fprintf(w, "Found %d repositories\n", len(results))
+	return nil
 }
