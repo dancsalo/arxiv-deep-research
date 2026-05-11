@@ -49,6 +49,7 @@ func (r *ResearchToolSet) Register(reg *registry.ToolRegistry) {
 	reg.Register("search_github_repos", BuildSearchGithubTool(), r.handleSearchGithub)
 	reg.Register("search_web", BuildSearchWebTool(), r.handleSearchWeb)
 	reg.Register("get_citations_and_references", BuildGetCitationsAndReferencesTool(), r.handleGetCitationsAndReferences)
+	reg.Register("fetch_webpage_content", BuildFetchWebpageContentTool(), r.handleFetchWebpageContent)
 }
 
 func toolError(msg string, recoverable bool) string {

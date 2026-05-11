@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	readability "github.com/go-shiori/go-readability"
 	"golang.org/x/net/html"
 )
 
@@ -882,5 +883,113 @@ func (r *ResearchToolSet) fetchAndFormatCitations(ctx context.Context, apiURL st
 	}
 
 	b, _ := json.Marshal(results)
+	return string(b), nil
+}
+
+
+// WebpageContent represents the extracted content from a webpage.
+type WebpageContent struct {
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	Author      string `json:"author,omitempty"`
+	Length      int    `json:"length"`
+	Excerpt     string `json:"excerpt"`
+	TextContent string `json:"text_content"`
+	Truncated   bool   `json:"truncated"`
+}
+
+// handleFetchWebpageContent fetches a webpage and extracts its main content using readability.
+func (r *ResearchToolSet) handleFetchWebpageContent(ctx context.Context, input json.RawMessage) (string, error) {
+	var params struct {
+		URL       string `json:"url"`
+		MaxLength int    `json:"max_length"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return toolError("invalid input: "+err.Error(), false), nil
+	}
+
+	// Validate URL
+	if params.URL == "" {
+		return toolError("url is required", false), nil
+	}
+	parsedURL, err := url.Parse(params.URL)
+	if err != nil || (parsedURL.Scheme != "http" && parsedURL.Scheme != "https") {
+		return toolError("invalid URL: must be http or https", false), nil
+	}
+
+	// Apply max_length constraints
+	if params.MaxLength <= 0 {
+		params.MaxLength = 8000
+	}
+	if params.MaxLength > 15000 {
+		params.MaxLength = 15000
+	}
+
+	// Rate limiting: enforce 2-second delay between requests
+	time.Sleep(2 * time.Second)
+
+	// Fetch webpage with timeout
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, params.URL, nil)
+	if err != nil {
+		return toolError("request creation failed: "+err.Error(), false), nil
+	}
+
+	// Set User-Agent to identify ourselves politely
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ArxivDeepResearch/1.0; +https://github.com/dancsalo/arxiv-deep-research)")
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return toolError("request failed: "+err.Error(), true), nil
+	}
+	defer resp.Body.Close()
+
+	// Handle common error status codes
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// Continue
+	case http.StatusForbidden, http.StatusUnauthorized:
+		return toolError(fmt.Sprintf("access denied (status %d): site may block scrapers or require authentication", resp.StatusCode), false), nil
+	case http.StatusNotFound:
+		return toolError("page not found (404)", false), nil
+	case http.StatusTooManyRequests:
+		return toolError("rate limited by target site (429)", true), nil
+	default:
+		return toolError(fmt.Sprintf("request returned status %d", resp.StatusCode), true), nil
+	}
+
+	// Check content type (only process HTML)
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(strings.ToLower(contentType), "text/html") {
+		return toolError(fmt.Sprintf("unsupported content type: %s (expected text/html)", contentType), false), nil
+	}
+
+	// Parse with readability
+	article, err := readability.FromReader(resp.Body, parsedURL)
+	if err != nil {
+		return toolError("failed to extract content: "+err.Error(), true), nil
+	}
+
+	// Prepare result
+	textContent := article.TextContent
+	truncated := false
+	if len(textContent) > params.MaxLength {
+		textContent = textContent[:params.MaxLength]
+		truncated = true
+	}
+
+	result := WebpageContent{
+		URL:         params.URL,
+		Title:       article.Title,
+		Author:      article.Byline,
+		Length:      len(article.TextContent),
+		Excerpt:     article.Excerpt,
+		TextContent: textContent,
+		Truncated:   truncated,
+	}
+
+	b, _ := json.Marshal(result)
 	return string(b), nil
 }

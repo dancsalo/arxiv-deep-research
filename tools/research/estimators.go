@@ -56,5 +56,15 @@ func ResearchToolEstimators() map[string]func(args map[string]any) int {
 			// 180 = title(30) + authors(40) + year(5) + doi(30) + id(20) + cited_by_count(10) + JSON(45)
 			return 50 + n*180
 		},
+		"fetch_webpage_content": func(args map[string]any) int {
+			// Default to 8000 chars, which is ~2000 tokens
+			maxLength := 8000
+			if v, ok := args["max_length"].(float64); ok && v > 0 {
+				maxLength = int(v)
+			}
+			// Estimate: text_content + metadata (title, author, excerpt, etc)
+			// Assume ~4 chars per token, plus 200 tokens overhead for metadata
+			return (maxLength / 4) + 200
+		},
 	}
 }

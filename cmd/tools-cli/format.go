@@ -37,6 +37,8 @@ func formatOutput(w io.Writer, toolName string, result string, asJSON bool) erro
 		return formatGithubResults(w, result)
 	case "get-citations":
 		return formatCitationResults(w, result)
+	case "fetch-webpage":
+		return formatWebpageResult(w, result)
 	default:
 		return fmt.Errorf("unknown tool: %s", toolName)
 	}
@@ -193,5 +195,45 @@ func formatCitationResults(w io.Writer, result string) error {
 	}
 
 	fmt.Fprintf(w, "Found %d papers\n", len(results))
+	return nil
+}
+
+func formatWebpageResult(w io.Writer, result string) error {
+	// Parse webpage content result
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &data); err != nil {
+		return fmt.Errorf("invalid webpage result format: %w", err)
+	}
+
+	fmt.Fprintf(w, "=== Webpage Content ===\n\n")
+
+	if title, ok := data["title"].(string); ok && title != "" {
+		fmt.Fprintf(w, "Title: %s\n", title)
+	}
+
+	if author, ok := data["author"].(string); ok && author != "" {
+		fmt.Fprintf(w, "Author: %s\n", author)
+	}
+
+	if url, ok := data["url"].(string); ok {
+		fmt.Fprintf(w, "URL: %s\n", url)
+	}
+
+	if length, ok := data["length"].(float64); ok {
+		fmt.Fprintf(w, "Length: %.0f characters\n", length)
+	}
+
+	if truncated, ok := data["truncated"].(bool); ok && truncated {
+		fmt.Fprintf(w, "Status: TRUNCATED (content exceeded max_length)\n")
+	}
+
+	if excerpt, ok := data["excerpt"].(string); ok && excerpt != "" {
+		fmt.Fprintf(w, "\nExcerpt:\n%s\n", excerpt)
+	}
+
+	if textContent, ok := data["text_content"].(string); ok && textContent != "" {
+		fmt.Fprintf(w, "\n--- Content ---\n%s\n", textContent)
+	}
+
 	return nil
 }

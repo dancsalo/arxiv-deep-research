@@ -25,6 +25,8 @@ func executeCommand(ctx context.Context, toolset *research.ResearchToolSet, comm
 		return executeSearchWeb(ctx, toolset, args)
 	case "get-citations":
 		return executeGetCitations(ctx, toolset, args)
+	case "fetch-webpage":
+		return executeFetchWebpage(ctx, toolset, args)
 	default:
 		return fmt.Errorf("unknown command: %s", command)
 	}
@@ -230,6 +232,38 @@ func executeGetCitations(ctx context.Context, toolset *research.ResearchToolSet,
 	}
 
 	return formatOutput(os.Stdout, "get-citations", result, *jsonOutput)
+}
+
+func executeFetchWebpage(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
+	fs := flag.NewFlagSet("fetch-webpage", flag.ExitOnError)
+	maxLength := fs.Int("max-length", 8000, "maximum content length in characters")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if fs.NArg() == 0 {
+		return fmt.Errorf("url argument required\n\nUsage: tools-cli fetch-webpage <url> [--max-length=N]\n\nExamples:\n  tools-cli fetch-webpage \"https://example.com/article\"\n  tools-cli fetch-webpage \"https://blog.example.com\" --max-length 10000")
+	}
+
+	url := fs.Arg(0)
+
+	input := map[string]interface{}{
+		"url":        url,
+		"max_length": *maxLength,
+	}
+
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("failed to marshal input: %w", err)
+	}
+
+	result, err := callToolHandler(ctx, toolset, "fetch_webpage_content", inputJSON)
+	if err != nil {
+		return err
+	}
+
+	return formatOutput(os.Stdout, "fetch-webpage", result, *jsonOutput)
 }
 
 // callToolHandler calls a tool handler through the registry

@@ -162,3 +162,28 @@ func BuildGetCitationsAndReferencesTool() anthropic.ToolUnionParam {
 	)
 	return t
 }
+
+func BuildFetchWebpageContentTool() anthropic.ToolUnionParam {
+	t := anthropic.ToolUnionParamOfTool(
+		anthropic.ToolInputSchemaParam{
+			Type: "object",
+			Properties: map[string]any{
+				"url": map[string]any{
+					"type":        "string",
+					"description": "URL of webpage to fetch and extract main content from",
+				},
+				"max_length": map[string]any{
+					"type":        "integer",
+					"description": "Maximum content length in characters (default 8000, max 15000)",
+					"default":     8000,
+				},
+			},
+			Required: []string{"url"},
+		},
+		"fetch_webpage_content",
+	)
+	t.OfTool.Description = anthropic.String(
+		"Fetch and extract main article content from a webpage. Returns cleaned text with HTML/ads/navigation removed using readability extraction. Use after search_web to get full article text when snippets are empty or you need more detail. Rate limit: 1 request per 2 seconds to be respectful. Works best on article/blog pages; may fail on dynamic JavaScript sites or paywalled content.",
+	)
+	return t
+}
