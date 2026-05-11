@@ -49,5 +49,12 @@ htmlcov/
 # Go binaries
 /tools-cli
 /research-demo
+/compare-traces
+/ctxmgr-demo
 examples/*/basic-tool-use
 examples/*/parallel-tool-use
+
+# Go build artifacts
+*.test
+*.out
+*.prof
