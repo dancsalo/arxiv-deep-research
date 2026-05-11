@@ -23,11 +23,13 @@ func NewRecorder(cfg Config) *Recorder {
 	return &Recorder{
 		cfg: cfg,
 		trace: Trace{
-			SessionID: cfg.SessionID,
-			Query:     cfg.Query,
-			Model:     cfg.Model,
-			StartedAt: time.Now(),
-			Status:    "ok",
+			SessionID:     cfg.SessionID,
+			PromptVariant: cfg.PromptVariant,
+			PromptHash:    cfg.PromptHash,
+			Query:         cfg.Query,
+			Model:         cfg.Model,
+			StartedAt:     time.Now(),
+			Status:        "ok",
 		},
 	}
 }
