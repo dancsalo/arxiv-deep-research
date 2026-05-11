@@ -118,7 +118,7 @@ func TestFetchArxivPdf_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "2301.00001"})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -149,7 +149,7 @@ func TestFetchArxivPdf_WithRedirect(t *testing.T) {
 	defer srv.Close()
 
 	// Test that redirects are followed (Go's http client follows redirects automatically)
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "2301.00001"})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -175,7 +175,7 @@ func TestFetchArxivPdf_OldFormatId(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "astro-ph/9901234"})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -195,7 +195,7 @@ func TestFetchArxivPdf_NotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "9999.99999"})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -213,7 +213,7 @@ func TestFetchArxivPdf_NotFound(t *testing.T) {
 }
 
 func TestFetchArxivPdf_InvalidJSON(t *testing.T) {
-	ts := &ResearchToolSet{client: http.DefaultClient}
+	ts := newTestResearchToolSet(http.DefaultClient)
 	result, err := ts.handleFetchArxivPdf(context.Background(), []byte("{invalid}"))
 	if err != nil {
 		t.Fatalf("unexpected Go error: %v", err)
@@ -230,7 +230,7 @@ func TestFetchArxivPdf_InvalidJSON(t *testing.T) {
 }
 
 func TestFetchArxivPdf_MissingField(t *testing.T) {
-	ts := &ResearchToolSet{client: http.DefaultClient}
+	ts := newTestResearchToolSet(http.DefaultClient)
 	input, _ := json.Marshal(map[string]any{})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -248,7 +248,7 @@ func TestFetchArxivPdf_MissingField(t *testing.T) {
 }
 
 func TestFetchArxivPdf_InvalidArxivID(t *testing.T) {
-	ts := &ResearchToolSet{client: http.DefaultClient}
+	ts := newTestResearchToolSet(http.DefaultClient)
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "not-an-arxiv-id"})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -269,7 +269,7 @@ func TestFetchArxivPdf_ContextCancelled(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
@@ -292,7 +292,7 @@ func TestFetchArxivPdf_ArxivMaintenance(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "2301.00001"})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -320,7 +320,7 @@ func TestFetchArxivPdf_SuspiciousRedirect(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "2301.00001"})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -341,7 +341,7 @@ func TestFetchArxivPdf_VersionSuffixPreserved(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "2301.00001v2"})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -361,7 +361,7 @@ func TestFetchArxivPdf_LeadingTrailingWhitespace(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"arxiv_id": "  2301.00001  "})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {
@@ -376,7 +376,7 @@ func TestFetchArxivPdf_LeadingTrailingWhitespace(t *testing.T) {
 }
 
 func TestFetchArxivPdf_EmptyStringID(t *testing.T) {
-	ts := &ResearchToolSet{client: http.DefaultClient}
+	ts := newTestResearchToolSet(http.DefaultClient)
 	input, _ := json.Marshal(map[string]any{"arxiv_id": ""})
 	result, err := ts.handleFetchArxivPdf(context.Background(), input)
 	if err != nil {

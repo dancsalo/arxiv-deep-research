@@ -73,7 +73,7 @@ func TestGetReferences_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"work_id": "W2741809807", "direction": "references", "max_results": 5})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -142,7 +142,7 @@ func TestGetCitingPapers_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"work_id": "W2741809807", "direction": "cited_by", "max_results": 10})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -167,7 +167,7 @@ func TestGetCitingPapers_Success(t *testing.T) {
 }
 
 func TestGetCitations_InvalidWorkIDFormat(t *testing.T) {
-	ts := &ResearchToolSet{client: &http.Client{}}
+	ts := newTestResearchToolSet(&http.Client{})
 	input, _ := json.Marshal(map[string]any{"work_id": "invalid-id", "direction": "references"})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -191,7 +191,7 @@ func TestGetCitations_InvalidWorkIDFormat(t *testing.T) {
 }
 
 func TestGetCitations_InvalidDirection(t *testing.T) {
-	ts := &ResearchToolSet{client: &http.Client{}}
+	ts := newTestResearchToolSet(&http.Client{})
 	input, _ := json.Marshal(map[string]any{"work_id": "W2741809807", "direction": "invalid"})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -221,7 +221,7 @@ func TestGetCitations_WorkNotFound(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"work_id": "W999999999", "direction": "references"})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -254,7 +254,7 @@ func TestGetReferences_NoReferences(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"work_id": "W123", "direction": "references"})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -298,7 +298,7 @@ func TestGetReferences_MaxResultsCapping(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"work_id": "W123", "direction": "references", "max_results": 10})
 	_, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -336,7 +336,7 @@ func TestGetCitations_AuthorLimiting(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"work_id": "W123", "direction": "cited_by", "max_results": 10})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -380,7 +380,7 @@ func TestGetCitations_NullCitationCount(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"work_id": "W123", "direction": "cited_by"})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {
@@ -422,7 +422,7 @@ func TestGetCitations_ZeroCitationCount(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"work_id": "W123", "direction": "cited_by"})
 	result, err := ts.handleGetCitationsAndReferences(context.Background(), input)
 	if err != nil {

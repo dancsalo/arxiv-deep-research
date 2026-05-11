@@ -54,7 +54,7 @@ func TestSearchOpenAlex_CitationSort(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "transformers", "sort": "cited_by_count", "max_results": 3})
 	result, err := ts.handleSearchOpenAlex(context.Background(), input)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestSearchOpenAlex_NoSortParameter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "test", "max_results": 5})
 	result, err := ts.handleSearchOpenAlex(context.Background(), input)
 	if err != nil {
@@ -131,7 +131,7 @@ func TestSearchOpenAlex_EmptyStringSortParameter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	// Explicitly pass empty string for sort
 	input, _ := json.Marshal(map[string]any{"query": "test", "sort": ""})
 	result, err := ts.handleSearchOpenAlex(context.Background(), input)
@@ -151,7 +151,7 @@ func TestSearchOpenAlex_EmptyStringSortParameter(t *testing.T) {
 }
 
 func TestSearchOpenAlex_InvalidSortValue(t *testing.T) {
-	ts := &ResearchToolSet{client: &http.Client{}}
+	ts := newTestResearchToolSet(&http.Client{})
 	input, _ := json.Marshal(map[string]any{"query": "test", "sort": "invalid_value"})
 	result, err := ts.handleSearchOpenAlex(context.Background(), input)
 	if err != nil {
@@ -200,7 +200,7 @@ func TestSearchOpenAlex_NullCitationCount(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "test"})
 	result, err := ts.handleSearchOpenAlex(context.Background(), input)
 	if err != nil {
@@ -247,7 +247,7 @@ func TestSearchOpenAlex_ZeroCitationCount(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "test"})
 	result, err := ts.handleSearchOpenAlex(context.Background(), input)
 	if err != nil {

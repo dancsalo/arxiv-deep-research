@@ -18,6 +18,8 @@ func NewTracingHooks(cfg Config) (*agentic.LoopHooks, *Recorder) {
 		OnTurnEnd:    rec.onTurnEnd,
 		OnToolCall:   rec.onToolCall,
 		OnToolResult: rec.onToolResult,
+		OnGuardrail:  rec.onGuardrail,
+		OnLLMCall:    rec.onLLMCall,
 	}, rec
 }
 
@@ -107,6 +109,37 @@ func (r *Recorder) onToolResult(_ context.Context, _ string, result string, _ ag
 			}
 		}
 		r.currentTurn.ToolCalls[idx].Output = outputJSON
+	}
+	return nil
+}
+
+func (r *Recorder) onGuardrail(_ context.Context, info agentic.GuardrailInfo, _ agentic.TurnState) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.currentTurn == nil {
+		return nil
+	}
+
+	r.currentTurn.GuardrailDecisions = append(r.currentTurn.GuardrailDecisions, GuardrailDecision{
+		ToolName:        info.ToolName,
+		Proceed:         info.Proceed,
+		Reason:          info.Reason,
+		EstimatedTokens: info.Estimated,
+		TokensRemaining: info.Remaining,
+		SafetyMargin:    info.SafetyMargin,
+		ArgsModified:    info.ArgsModified,
+		Compacted:       info.Compacted,
+		CompactedTurns:  info.CompactedTurns,
+	})
+	return nil
+}
+
+func (r *Recorder) onLLMCall(_ context.Context, input, output json.RawMessage, _ agentic.TurnState) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pendingLLMCall != nil {
+		r.pendingLLMCall.Input = input
+		r.pendingLLMCall.Output = output
 	}
 	return nil
 }

@@ -83,5 +83,27 @@ func ComposeHooks(a, b *LoopHooks) *LoopHooks {
 			}
 			return nil
 		},
+		OnGuardrail: func(ctx context.Context, info GuardrailInfo, state TurnState) error {
+			if a.OnGuardrail != nil {
+				if err := a.OnGuardrail(ctx, info, state); err != nil {
+					return err
+				}
+			}
+			if b.OnGuardrail != nil {
+				return b.OnGuardrail(ctx, info, state)
+			}
+			return nil
+		},
+		OnLLMCall: func(ctx context.Context, input, output json.RawMessage, state TurnState) error {
+			if a.OnLLMCall != nil {
+				if err := a.OnLLMCall(ctx, input, output, state); err != nil {
+					return err
+				}
+			}
+			if b.OnLLMCall != nil {
+				return b.OnLLMCall(ctx, input, output, state)
+			}
+			return nil
+		},
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 const arxivAtomSample = `<?xml version="1.0" encoding="UTF-8"?>
@@ -34,9 +35,10 @@ func TestSearchArxiv_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: srv.Client()}
-	// Override the URL by using a custom transport that redirects
-	ts.client = &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}
+	ts := &ResearchToolSet{
+		client:           &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}},
+		arxivRateLimiter: newRateLimiter(334 * time.Millisecond),
+	}
 
 	input, _ := json.Marshal(map[string]any{"query": "attention", "max_results": 2})
 	result, err := ts.handleSearchArxiv(context.Background(), input)
@@ -74,7 +76,7 @@ func TestSearchArxiv_EmptyResults(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "nonexistent"})
 	result, err := ts.handleSearchArxiv(context.Background(), input)
 	if err != nil {
@@ -94,7 +96,7 @@ func TestSearchArxiv_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "test"})
 	result, err := ts.handleSearchArxiv(context.Background(), input)
 	if err != nil {
@@ -114,7 +116,7 @@ func TestSearchArxiv_ContextCancelled(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 

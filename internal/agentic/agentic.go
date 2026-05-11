@@ -60,15 +60,26 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 			messages = injectMemories(messages, memoryBlock)
 		}
 
-		resp, err := l.client.CreateMessage(ctx, anthropic.MessageNewParams{
+		params := anthropic.MessageNewParams{
 			Model:     l.cfg.Model,
 			MaxTokens: 8192,
 			Tools:     tools,
 			System:    l.system,
 			Messages:  messages,
-		})
+		}
+
+		resp, err := l.client.CreateMessage(ctx, params)
 		if err != nil {
 			return "", fmt.Errorf("turn %d API error: %w", l.turnIndex, err)
+		}
+
+		// Call OnLLMCall hook with full input/output
+		if l.hooks.OnLLMCall != nil {
+			inputJSON, _ := json.Marshal(params)
+			outputJSON, _ := json.Marshal(resp)
+			if err := l.hooks.OnLLMCall(ctx, inputJSON, outputJSON, state); err != nil {
+				l.logger.Warn("hook.error", "hook", "OnLLMCall", "err", err)
+			}
 		}
 
 		cost := estimateCost(resp.Usage, l.cfg.Model)
@@ -146,6 +157,30 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 
 				args := jsonToMap(toolInput)
 				decision, guardErr := l.manager.PreToolGuardrail(ctx, toolName, args)
+
+				// Call OnGuardrail hook with decision info
+				if l.hooks.OnGuardrail != nil {
+					tokensUsed := l.manager.EstimateAllTokens()
+					tokensRemaining := l.manager.Budget().Remaining(tokensUsed)
+					safetyMargin := l.manager.Budget().SafetyMargin
+					estimated := l.manager.EstimateToolResult(toolName, args)
+
+					guardInfo := GuardrailInfo{
+						ToolName:       toolName,
+						Proceed:        guardErr == nil && decision.Proceed,
+						Reason:         decision.Reason,
+						Estimated:      estimated,
+						Remaining:      tokensRemaining,
+						SafetyMargin:   safetyMargin,
+						ArgsModified:   decision.ModifiedArgs != nil,
+						Compacted:      len(decision.Compacted) > 0,
+						CompactedTurns: decision.Compacted,
+					}
+					if err := l.hooks.OnGuardrail(ctx, guardInfo, state); err != nil {
+						l.logger.Warn("hook.error", "hook", "OnGuardrail", "err", err)
+					}
+				}
+
 				if guardErr != nil {
 					toolResults = append(toolResults,
 						anthropic.NewToolResultBlock(toolID, fmt.Sprintf("error: %v", guardErr), true))

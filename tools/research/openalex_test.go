@@ -46,7 +46,7 @@ func TestSearchOpenAlex_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "RAG", "max_results": 3})
 	result, err := ts.handleSearchOpenAlex(context.Background(), input)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestSearchOpenAlex_NullAbstract(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "test"})
 	result, _ := ts.handleSearchOpenAlex(context.Background(), input)
 
@@ -100,7 +100,7 @@ func TestSearchOpenAlex_WithFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "test", "filter": "publication_year:>2022"})
 	_, err := ts.handleSearchOpenAlex(context.Background(), input)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestSearchOpenAlex_HTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	ts := &ResearchToolSet{client: &http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}}}
+	ts := newTestResearchToolSet(&http.Client{Transport: &rewriteTransport{base: srv.URL, rt: http.DefaultTransport}})
 	input, _ := json.Marshal(map[string]any{"query": "test"})
 	result, err := ts.handleSearchOpenAlex(context.Background(), input)
 	if err != nil {

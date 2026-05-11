@@ -164,7 +164,7 @@ func main() {
 		nil,
 		agentic.LoopConfig{
 			MaxTurns:        *maxTurns,
-			MaxCostUSD:      2.00,
+			MaxCostUSD:      1.00,
 			Model:           modelID,
 			SessionID:       sessionID,
 			FinishTool:      "finish_loop",

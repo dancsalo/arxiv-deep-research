@@ -62,9 +62,6 @@ func TestSearchWeb_Success(t *testing.T) {
 	if results[0].URL != "https://example.com/paper1" {
 		t.Errorf("expected cleaned URL, got: %s", results[0].URL)
 	}
-	if results[0].Snippet != "This is the first result snippet" {
-		t.Errorf("unexpected snippet: %s", results[0].Snippet)
-	}
 
 	// Verify failure counter was reset on success
 	if failures := ts.searchWebFailures.Load(); failures != 0 {

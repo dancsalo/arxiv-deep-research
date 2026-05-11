@@ -43,13 +43,27 @@ type TurnState struct {
 	ToolResultTexts   map[string]string
 }
 
+type GuardrailInfo struct {
+	ToolName        string
+	Proceed         bool
+	Reason          string
+	Estimated       int
+	Remaining       int
+	SafetyMargin    int
+	ArgsModified    bool
+	Compacted       bool
+	CompactedTurns  []int
+}
+
 type LoopHooks struct {
-	OnTurnStart     func(ctx context.Context, state TurnState) error
-	OnTurnEnd       func(ctx context.Context, state TurnState) error
-	OnToolCall      func(ctx context.Context, toolName string, input json.RawMessage, state TurnState) error
-	OnToolResult    func(ctx context.Context, toolName string, result string, state TurnState) error
-	OnMemoryRecall  func(ctx context.Context, memories []RecalledMemory, state TurnState) ([]RecalledMemory, error)
-	OnMemoryPersist func(ctx context.Context, state TurnState) error
+	OnTurnStart        func(ctx context.Context, state TurnState) error
+	OnTurnEnd          func(ctx context.Context, state TurnState) error
+	OnToolCall         func(ctx context.Context, toolName string, input json.RawMessage, state TurnState) error
+	OnToolResult       func(ctx context.Context, toolName string, result string, state TurnState) error
+	OnGuardrail        func(ctx context.Context, info GuardrailInfo, state TurnState) error
+	OnLLMCall          func(ctx context.Context, input, output json.RawMessage, state TurnState) error
+	OnMemoryRecall     func(ctx context.Context, memories []RecalledMemory, state TurnState) ([]RecalledMemory, error)
+	OnMemoryPersist    func(ctx context.Context, state TurnState) error
 }
 
 type LoopConfig struct {
