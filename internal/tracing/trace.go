@@ -54,11 +54,13 @@ type ToolCall struct {
 }
 
 type Config struct {
-	Dir       string
-	SessionID string
-	Query     string
-	Model     string
-	Logger    *slog.Logger
+	Dir           string
+	SessionID     string
+	Query         string
+	Model         string
+	PromptVariant string   // NEW: "A", "B", or "C"
+	PromptHash    string   // NEW: First 8 chars of SHA256
+	Logger        *slog.Logger
 }
 
 func (cfg Config) Enabled() bool {
