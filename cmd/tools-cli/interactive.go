@@ -55,7 +55,8 @@ func runInteractive(ctx context.Context, toolset *research.ResearchToolSet) erro
 				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 			}
 		default:
-			fmt.Println("Invalid selection. Please try again.\n")
+			fmt.Println("Invalid selection. Please try again.")
+			fmt.Println()
 			continue
 		}
 
