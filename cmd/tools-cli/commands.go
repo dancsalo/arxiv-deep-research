@@ -23,6 +23,8 @@ func executeCommand(ctx context.Context, toolset *research.ResearchToolSet, comm
 		return executeSearchGithub(ctx, toolset, args)
 	case "search-web":
 		return executeSearchWeb(ctx, toolset, args)
+	case "get-citations":
+		return executeGetCitations(ctx, toolset, args)
 	default:
 		return fmt.Errorf("unknown command: %s", command)
 	}
@@ -188,6 +190,44 @@ func executeSearchWeb(ctx context.Context, toolset *research.ResearchToolSet, ar
 	}
 
 	return formatOutput(os.Stdout, "search-web", result, *jsonOutput)
+}
+
+func executeGetCitations(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
+	fs := flag.NewFlagSet("get-citations", flag.ExitOnError)
+	maxResults := fs.Int("max-results", 10, "maximum number of results")
+	direction := fs.String("direction", "", "direction: 'references' (bibliography) or 'cited_by' (forward citations)")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	if fs.NArg() == 0 {
+		return fmt.Errorf("work_id argument required\n\nUsage: tools-cli get-citations <work_id> --direction=<references|cited_by> [--max-results=N]\n\nExample: tools-cli get-citations W2741809807 --direction references --max-results 10")
+	}
+
+	if *direction == "" {
+		return fmt.Errorf("--direction flag required (references or cited_by)\n\nUsage: tools-cli get-citations <work_id> --direction=<references|cited_by> [--max-results=N]\n\nExample: tools-cli get-citations W2741809807 --direction references --max-results 10")
+	}
+
+	workID := fs.Arg(0)
+
+	input := map[string]interface{}{
+		"work_id":     workID,
+		"direction":   *direction,
+		"max_results": *maxResults,
+	}
+
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("failed to marshal input: %w", err)
+	}
+
+	result, err := callToolHandler(ctx, toolset, "get_citations_and_references", inputJSON)
+	if err != nil {
+		return err
+	}
+
+	return formatOutput(os.Stdout, "get-citations", result, *jsonOutput)
 }
 
 // callToolHandler calls a tool handler through the registry

@@ -121,11 +121,23 @@ type OpenAlexResult struct {
 	CitedByCount *int     `json:"cited_by_count,omitempty"` // nil if OpenAlex has no citation data
 }
 
+// CitationResult represents a lightweight result for citations and references.
+// Excludes abstract to save tokens (~180 tokens per result vs ~360 for full results).
+type CitationResult struct {
+	ID           string   `json:"id"`                       // OpenAlex work ID (W...)
+	Title        string   `json:"title"`
+	Authors      []string `json:"authors"`                  // First 3 authors only
+	Year         int      `json:"year"`
+	CitedByCount *int     `json:"cited_by_count,omitempty"` // Pointer for null handling
+	DOI          string   `json:"doi"`
+}
+
 type openAlexResponse struct {
 	Results []openAlexWork `json:"results"`
 }
 
 type openAlexWork struct {
+	ID                    string               `json:"id"` // Full OpenAlex URL (https://openalex.org/W123)
 	Title                 string               `json:"title"`
 	DOI                   string               `json:"doi"`
 	PublicationYear       int                  `json:"publication_year"`
@@ -700,4 +712,147 @@ func getTextContent(n *html.Node) string {
 	}
 	visit(n)
 	return buf.String()
+}
+
+// handleGetCitationsAndReferences fetches citations or references for a given OpenAlex work.
+func (r *ResearchToolSet) handleGetCitationsAndReferences(ctx context.Context, input json.RawMessage) (string, error) {
+	var params struct {
+		WorkID     string `json:"work_id"`
+		Direction  string `json:"direction"`
+		MaxResults int    `json:"max_results"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return toolError("invalid input: "+err.Error(), false), nil
+	}
+
+	// Validate work_id format
+	if !regexp.MustCompile(`^W\d+$`).MatchString(params.WorkID) {
+		return toolError("invalid work_id format: must be OpenAlex ID like W2741809807", false), nil
+	}
+
+	// Validate direction
+	if params.Direction != "references" && params.Direction != "cited_by" {
+		return toolError("invalid direction: must be 'references' or 'cited_by'", false), nil
+	}
+
+	// Apply max_results constraints
+	if params.MaxResults <= 0 {
+		params.MaxResults = 10
+	}
+	if params.MaxResults > 50 {
+		params.MaxResults = 50
+	}
+
+	// Route to appropriate handler
+	if params.Direction == "references" {
+		return r.fetchReferences(ctx, params.WorkID, params.MaxResults)
+	}
+	return r.fetchCitingPapers(ctx, params.WorkID, params.MaxResults)
+}
+
+// fetchReferences fetches papers cited BY the given work (bibliography).
+// Uses 2 API calls: fetch work to get referenced_works, then batch fetch metadata.
+func (r *ResearchToolSet) fetchReferences(ctx context.Context, workID string, maxResults int) (string, error) {
+	// Fetch work to get referenced_works array
+	workURL := fmt.Sprintf("https://api.openalex.org/works/%s?mailto=arxiv-deep-research@users.noreply.github.com", workID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, workURL, nil)
+	if err != nil {
+		return toolError("request creation failed: "+err.Error(), false), nil
+	}
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return toolError("OpenAlex request failed: "+err.Error(), true), nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return toolError(fmt.Sprintf("work not found: %s", workID), false), nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		return toolError(fmt.Sprintf("OpenAlex returned status %d", resp.StatusCode), true), nil
+	}
+
+	var work struct {
+		ReferencedWorks []string `json:"referenced_works"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&work); err != nil {
+		return toolError("failed to parse work response: "+err.Error(), true), nil
+	}
+
+	if len(work.ReferencedWorks) == 0 {
+		return "[]", nil
+	}
+
+	// Limit to max_results
+	refIDs := work.ReferencedWorks
+	if len(refIDs) > maxResults {
+		refIDs = refIDs[:maxResults]
+	}
+
+	// Batch fetch metadata
+	filterValue := strings.Join(refIDs, "|")
+	batchURL := fmt.Sprintf("https://api.openalex.org/works?filter=openalex:%s&per_page=%d&mailto=arxiv-deep-research@users.noreply.github.com",
+		url.QueryEscape(filterValue), len(refIDs))
+
+	return r.fetchAndFormatCitations(ctx, batchURL)
+}
+
+// fetchCitingPapers fetches papers that cite the given work (forward citations).
+// Uses 1 API call with OpenAlex filter.
+func (r *ResearchToolSet) fetchCitingPapers(ctx context.Context, workID string, maxResults int) (string, error) {
+	u := fmt.Sprintf("https://api.openalex.org/works?filter=cites:%s&per_page=%d&mailto=arxiv-deep-research@users.noreply.github.com",
+		workID, maxResults)
+	return r.fetchAndFormatCitations(ctx, u)
+}
+
+// fetchAndFormatCitations is a shared helper that fetches works from OpenAlex and formats them as CitationResult.
+func (r *ResearchToolSet) fetchAndFormatCitations(ctx context.Context, apiURL string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+	if err != nil {
+		return toolError("request creation failed: "+err.Error(), false), nil
+	}
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return toolError("OpenAlex request failed: "+err.Error(), true), nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return toolError(fmt.Sprintf("OpenAlex returned status %d", resp.StatusCode), true), nil
+	}
+
+	var oaResp openAlexResponse
+	if err := json.NewDecoder(resp.Body).Decode(&oaResp); err != nil {
+		return toolError("failed to parse response: "+err.Error(), true), nil
+	}
+
+	results := make([]CitationResult, 0, len(oaResp.Results))
+	for _, work := range oaResp.Results {
+		// Extract first 3 authors only
+		authors := make([]string, 0, min(3, len(work.Authorships)))
+		for i := 0; i < min(3, len(work.Authorships)); i++ {
+			authors = append(authors, work.Authorships[i].Author.DisplayName)
+		}
+
+		// Extract work ID from full URL (https://openalex.org/W123 → W123)
+		workID := work.ID
+		if idx := strings.LastIndex(work.ID, "/"); idx != -1 {
+			workID = work.ID[idx+1:]
+		}
+
+		results = append(results, CitationResult{
+			ID:           workID,
+			Title:        work.Title,
+			Authors:      authors,
+			Year:         work.PublicationYear,
+			CitedByCount: work.CitedByCount,
+			DOI:          work.DOI,
+		})
+	}
+
+	b, _ := json.Marshal(results)
+	return string(b), nil
 }

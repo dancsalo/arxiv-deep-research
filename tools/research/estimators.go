@@ -47,5 +47,14 @@ func ResearchToolEstimators() map[string]func(args map[string]any) int {
 			// Estimated ~200 tokens per result
 			return 50 + 10*200 // 2050 tokens
 		},
+		"get_citations_and_references": func(args map[string]any) int {
+			n := 10
+			if v, ok := args["max_results"].(float64); ok && v > 0 {
+				n = int(v)
+			}
+			// Base overhead (50) + per-result (180 tokens)
+			// 180 = title(30) + authors(40) + year(5) + doi(30) + id(20) + cited_by_count(10) + JSON(45)
+			return 50 + n*180
+		},
 	}
 }

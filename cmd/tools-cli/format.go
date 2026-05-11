@@ -35,6 +35,8 @@ func formatOutput(w io.Writer, toolName string, result string, asJSON bool) erro
 		return formatPdfResult(w, result)
 	case "search-github":
 		return formatGithubResults(w, result)
+	case "get-citations":
+		return formatCitationResults(w, result)
 	default:
 		return fmt.Errorf("unknown tool: %s", toolName)
 	}
@@ -140,5 +142,56 @@ func formatGithubResults(w io.Writer, result string) error {
 	}
 
 	fmt.Fprintf(w, "Found %d repositories\n", len(results))
+	return nil
+}
+
+func formatCitationResults(w io.Writer, result string) error {
+	// Parse as array of citation results
+	var results []map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &results); err != nil {
+		return fmt.Errorf("invalid results format: %w", err)
+	}
+
+	fmt.Fprintf(w, "=== Citation Results ===\n\n")
+
+	for i, paper := range results {
+		fmt.Fprintf(w, "%d. ", i+1)
+
+		if title, ok := paper["title"].(string); ok {
+			fmt.Fprintf(w, "%s\n", title)
+		}
+
+		if id, ok := paper["id"].(string); ok {
+			fmt.Fprintf(w, "   ID: %s\n", id)
+		}
+
+		if authors, ok := paper["authors"].([]interface{}); ok && len(authors) > 0 {
+			authorNames := make([]string, 0, len(authors))
+			for _, a := range authors {
+				if name, ok := a.(string); ok {
+					authorNames = append(authorNames, name)
+				}
+			}
+			if len(authorNames) > 0 {
+				fmt.Fprintf(w, "   Authors: %s\n", strings.Join(authorNames, ", "))
+			}
+		}
+
+		if year, ok := paper["year"].(float64); ok {
+			fmt.Fprintf(w, "   Year: %.0f\n", year)
+		}
+
+		if citedByCount, ok := paper["cited_by_count"].(float64); ok {
+			fmt.Fprintf(w, "   Citations: %.0f\n", citedByCount)
+		}
+
+		if doi, ok := paper["doi"].(string); ok && doi != "" {
+			fmt.Fprintf(w, "   DOI: %s\n", doi)
+		}
+
+		fmt.Fprintln(w)
+	}
+
+	fmt.Fprintf(w, "Found %d papers\n", len(results))
 	return nil
 }
