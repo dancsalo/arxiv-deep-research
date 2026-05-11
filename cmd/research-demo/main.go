@@ -37,11 +37,12 @@ func loadPrompt(variant string) (string, string, error) {
 		"A": "variant-a-explicit.txt",
 		"B": "variant-b-metacognitive.txt",
 		"C": "variant-c-reward.txt",
+		"D": "variant-d-survey-driven.txt",
 	}
 
 	filename, ok := variantMap[variant]
 	if !ok {
-		return "", "", fmt.Errorf("unknown prompt variant: %s (must be A, B, or C)", variant)
+		return "", "", fmt.Errorf("unknown prompt variant: %s (must be A, B, C, or D)", variant)
 	}
 
 	// Construct path relative to this source file
@@ -76,7 +77,7 @@ func main() {
 	maxTurns := flag.Int("max-turns", 10, "maximum agentic loop turns")
 	traceDir := flag.String("trace-dir", ".traces", "directory for trace files (empty to disable)")
 	useBedrock := flag.Bool("bedrock", true, "use AWS Bedrock")
-	promptVariant := flag.String("prompt-variant", "A", "prompt variant: A (explicit), B (metacognitive), C (reward)")
+	promptVariant := flag.String("prompt-variant", "A", "prompt variant: A (explicit), B (metacognitive), C (reward), D (survey-driven)")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -97,9 +98,9 @@ func main() {
 	if *model != "" {
 		modelID = anthropic.Model(*model)
 	} else if *useBedrock {
-		modelID = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+		modelID = "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 	} else {
-		modelID = anthropic.ModelClaudeHaiku4_5
+		modelID = anthropic.ModelClaudeSonnet4_6
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -163,7 +164,7 @@ func main() {
 		nil,
 		agentic.LoopConfig{
 			MaxTurns:        *maxTurns,
-			MaxCostUSD:      0.50,
+			MaxCostUSD:      2.00,
 			Model:           modelID,
 			SessionID:       sessionID,
 			FinishTool:      "finish_loop",

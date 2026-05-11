@@ -47,5 +47,7 @@ htmlcov/
 .mypy_cache/
 
 # Go binaries
+/tools-cli
+/research-demo
 examples/*/basic-tool-use
 examples/*/parallel-tool-use

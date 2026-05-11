@@ -8,6 +8,27 @@ user_invocable: true
 
 When the user invokes this skill (e.g. `/code-all`, "code everything", "full code pipeline", "implement the plan end-to-end"), run the entire coding workflow autonomously from start to finish. **Do NOT stop to ask the user questions at any point.** Make reasonable decisions and document them. The user will review the PR at the end.
 
+## Overview
+
+This is **Phase 2** of the two-phase development workflow: **planning** then **coding**. Build from the plan, section by section, with verification at every step. This skill runs the full pipeline autonomously, or you can invoke each step manually.
+
+The pipeline:
+```
+code-checklist → [ code-implement → code-critique → code-revise (loop) → code-verify → code-revise (if failures) → code-checkpoint ] × N sections → code-finish
+```
+
+Steps:
+1. **code-checklist** — convert the plan into an ordered implementation checklist. Then for each section:
+   - **code-implement** — write production code for that checklist item following specs and contracts.
+   - **code-critique** — grumpy staff-engineer code review of the section.
+   - **code-revise** — apply critique fixes (loop with critique until approved, max 3 rounds).
+   - **code-verify** — run lint and tests. Fix failures.
+   - **code-revise** — if verification fails, fix and re-verify.
+   - **code-checkpoint** — commit locally once the section passes all checks.
+2. **code-finish** — run all checks, push to a feature branch, and open a PR.
+
+**code-all** orchestrates step 1 end-to-end without stopping for user input.
+
 ## Prerequisites
 
 - An implementation plan must exist in `.claude/plans/`.

@@ -1,6 +1,20 @@
 # arXiv Deep Research
 
-A Go-based research agent with tool support for searching academic literature, fetching papers, and finding code implementations.
+An autonomous AI research agent that searches academic literature, analyzes papers, and synthesizes findings. Built in Go with Claude 4.x integration, context management, and tracing.
+
+## Quick Start
+
+```bash
+# Build and run the research agent
+make run
+
+# Or with custom query and variant
+./research-demo --query "quantum computing algorithms" --prompt-variant A --max-turns 15
+
+# Test individual research tools
+./tools-cli search-arxiv "transformers" --max-results 5
+./tools-cli --interactive
+```
 
 ## Research Tools
 
@@ -105,144 +119,111 @@ tools-cli search-web "quantum computing tutorials"
 
 **Use case:** Finding tutorials, documentation, and general information when academic sources are insufficient
 
+## Research Agent Features
+
+- **Autonomous research loop** - Multi-turn agentic workflow with tool use
+- **Context management** - Token budgeting, guardrails, and automatic compaction
+- **Multiple prompt variants** - Compare different prompting strategies
+- **Comprehensive tracing** - JSON traces for analysis and debugging
+- **Research tools** - arXiv, OpenAlex, GitHub, web search
+
 ## Getting Started
 
 ### Prerequisites
-- Go 1.21 or later
-- Internet connection (tools call external APIs)
-- (Optional) GitHub personal access token for higher rate limits
+- Go 1.25 or later
+- Claude API key (set `ANTHROPIC_API_KEY` env var)
+- Internet connection for research tools
 
 ### Installation
 
 ```bash
 git clone https://github.com/dancsalo/arxiv-deep-research.git
 cd arxiv-deep-research
-go build ./cmd/tools-cli
+make build
 ```
 
-### Quick Start
+### Running the Research Agent
 
-```bash
-# Search for papers
-./tools-cli search-arxiv "transformers"
-
-# Get PDF URL
-./tools-cli fetch-pdf "1706.03762"
-
-# Search web
-./tools-cli search-web "machine learning tutorials"
-
-# Interactive mode
-./tools-cli --interactive
-```
-
-### Research Demo with Prompt Variants
-
-The research-demo tool supports three system prompt variants for experimentation:
+The research agent (`research-demo`) implements an autonomous research loop with multiple prompt variants:
 
 **Variant A (Explicit)** - Prescriptive turn-by-turn guidance
 - Enforces parallel tool usage for breadth
-- Provides explicit examples of sequential chains
-- Targets 10-15 turns with structured phases
+- Structured phases with explicit examples
+- Targets 10-15 turns
 
 **Variant B (Metacognitive)** - Strategy planning and self-reflection
-- Prompts for pre-turn planning and post-turn reflection
+- Pre-turn planning and post-turn reflection
 - Adaptive tool selection based on findings
 - Quality gates for stopping criteria
 
 **Variant C (Reward-Shaping)** - Quality metrics and scoring
-- Evaluates research on 5 dimensions (tool diversity, triangulation, depth, breadth, implementations)
+- Evaluates research on 5 dimensions
 - Target score: 90+ points for "Excellent" quality
 - Self-assessment before completion
 
-Usage:
+**Variant D (Survey-Driven)** - Comprehensive literature review
+- Systematic survey methodology
+- Multiple sources and triangulation
+- Citation analysis
+
+### Basic Usage
+
 ```bash
-research-demo --query "transformers" --prompt-variant A
-research-demo --query "transformers" --prompt-variant B --max-turns 15
-research-demo --query "transformers" --prompt-variant C
+# Default run (variant A)
+make run
+
+# Custom query and variant
+./research-demo --query "neural architecture search" --prompt-variant B --max-turns 12
+
+# Use different Claude model
+./research-demo --query "diffusion models" --model opus --prompt-variant C
 ```
 
-Compare multiple runs:
+### Analyzing Results
+
+Traces are saved to `.traces/` as JSON files:
+
 ```bash
-compare-traces .traces/demo-*.json
-compare-traces --json .traces/demo-1.json .traces/demo-2.json > comparison.json
+# List recent traces
+make trace-list
+
+# Show specific trace
+make trace-show RUN=<session_id>
+
+# Show failed traces
+make trace-errors
 ```
 
-Prompt files are stored in `cmd/research-demo/prompts/variant-{a,b,c}.txt` and can be customized.
+Prompt files are in `cmd/research-demo/prompts/variant-{a,b,c,d}.txt` and can be customized.
 
-## CLI Usage
+## Testing Individual Tools
 
-### Script Mode
-
-Run specific commands with arguments:
+The `tools-cli` binary lets you test research tools independently:
 
 ```bash
+# Build tools CLI
+make build-tools
+
 # Search arXiv
-tools-cli search-arxiv "attention mechanism" --max-results 5
+./tools-cli search-arxiv "attention mechanism" --max-results 5
 
 # Search OpenAlex with filter
-tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
+./tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
 
-# Fetch PDF URL
-tools-cli fetch-pdf "1706.03762"
+# Get PDF URL
+./tools-cli fetch-pdf "1706.03762"
 
 # Search GitHub
-tools-cli search-github "diffusion models pytorch" --max-results 3
+./tools-cli search-github "diffusion models pytorch"
 
 # Search web
-tools-cli search-web "quantum computing tutorials" --max-results 10
+./tools-cli search-web "quantum computing tutorials"
 
-# JSON output (for scripting)
-tools-cli search-arxiv "transformers" --json
-```
+# Interactive mode
+./tools-cli --interactive
 
-### Interactive Mode
-
-Launch the interactive menu:
-
-```bash
-tools-cli --interactive
-# or
-tools-cli -i
-```
-
-The interactive mode will prompt you for:
-1. Tool selection (numbered menu)
-2. Required parameters (query, arXiv ID, etc.)
-3. Optional parameters (with defaults shown)
-
-Example session:
-```
-=== Research Tools CLI ===
-
-Select a tool:
-  [1] search-arxiv        - Search arXiv for preprints
-  [2] search-openalex     - Search academic literature
-  [3] fetch-pdf           - Get arXiv PDF download URL
-  [4] search-github       - Find GitHub repositories
-  [5] search-web          - Search the general web
-  [0] Exit
-
-Enter selection: 1
-
---- search-arxiv ---
-Query: attention mechanism
-Max results [10]: 5
-
-Searching arXiv...
-
-=== Results ===
-[... formatted results ...]
-
-Run another command? [y/n]:
-```
-
-### JSON Output
-
-Use `--json` flag for machine-readable output (useful for scripting):
-
-```bash
-tools-cli search-arxiv "transformers" --json | jq '.[:2]'
+# JSON output for scripting
+./tools-cli search-arxiv "transformers" --json | jq '.[:2]'
 ```
 
 ## Running Tests
@@ -263,12 +244,18 @@ go test ./tools/research -run TestHandleSearchArxiv
 
 ## Architecture
 
-- `internal/ctxmgr/` - Context management and token budgets
-- `internal/agentic/` - Agentic loop and research workflow
+**Core Components:**
+- `cmd/research-demo/` - Main application: autonomous research agent
+- `cmd/tools-cli/` - CLI for testing individual research tools
+
+**Internal Packages:**
+- `internal/agentic/` - Agentic loop implementation and research workflow
+- `internal/ctxmgr/` - Context management, token budgets, and guardrails
 - `internal/registry/` - Tool registration system
-- `tools/research/` - Research tool implementations
-- `cmd/tools-cli/` - Interactive CLI for testing tools
-- `cmd/research-demo/` - Full research agent demo
+- `internal/tracing/` - JSON tracing and instrumentation
+
+**Tools:**
+- `tools/research/` - Research tool implementations (arXiv, OpenAlex, GitHub, web)
 
 See [CLAUDE.md](./CLAUDE.md) for development workflow.
 
@@ -290,14 +277,14 @@ This project uses a two-phase workflow (planning → coding). See [CLAUDE.md](./
 ```
 .
 ├── cmd/
-│   ├── research-demo/      # Full research agent
-│   ├── server/             # HTTP server with SSE streaming
-│   └── tools-cli/          # CLI for testing tools
+│   ├── research-demo/      # Main: autonomous research agent
+│   └── tools-cli/          # CLI for testing individual tools
 ├── internal/
-│   ├── agentic/            # Agentic loop
-│   ├── ctxmgr/             # Context management
-│   └── registry/           # Tool registry
+│   ├── agentic/            # Agentic loop and workflow
+│   ├── ctxmgr/             # Context management and budgeting
+│   ├── registry/           # Tool registration
+│   └── tracing/            # JSON tracing
 ├── tools/
 │   └── research/           # Research tool implementations
-└── README.md               # This file
+└── .traces/                # Research run traces (gitignored)
 ```
