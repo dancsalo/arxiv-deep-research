@@ -68,6 +68,7 @@ Commands:
   fetch-pdf <arxiv-id>
   search-github <query> [--max-results=N]
   search-web <query> [--max-results=N]
+  get-citations --direction=<references|cited_by> [--max-results=N] <work-id>
 
 Flags:
   --interactive, -i    Launch interactive mode
@@ -80,6 +81,7 @@ Examples:
   tools-cli fetch-pdf "1706.03762"
   tools-cli search-github "diffusion models pytorch"
   tools-cli search-web "quantum computing tutorials"
+  tools-cli get-citations --direction=references --max-results=10 W2963403356
   tools-cli --interactive
 `)
 }
