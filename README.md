@@ -24,7 +24,7 @@ The research agent has access to multiple tools for searching academic literatur
 |------|---------|-------------|
 | `search_arxiv` | Search arXiv for academic preprints | No limit |
 | `search_openalex` | Search OpenAlex for published academic works | No limit |
-| `fetch_arxiv_pdf` | Get PDF download URL for arXiv papers | 1 req/3 sec |
+| `fetch_arxiv_pdf` | Extract text content from arXiv PDFs | 1 req/3 sec |
 | `search_github_repos` | Find popular GitHub repositories | 60 req/hr (no auth) |
 | `search_web` | Search the general web using DuckDuckGo | No limit |
 | `get_citations_and_references` | Get citations and references from OpenAlex | No limit |
