@@ -396,14 +396,38 @@ func TestFetchArxivPdf_EmptyStringID(t *testing.T) {
 	}
 }
 
-// Estimator test
+// Estimator tests
 
-func TestArxivPdfEstimator(t *testing.T) {
+func TestArxivPdfEstimator_DefaultMaxLength(t *testing.T) {
 	estimators := ResearchToolEstimators()
 
+	// Default max_length=8000 → ~2200 tokens (200 base + 2000 text)
 	got := estimators["fetch_arxiv_pdf"](map[string]any{"arxiv_id": "2301.00001"})
-	if got != 100 {
-		t.Errorf("fetch_arxiv_pdf estimator: got %d, want 100", got)
+	expected := 2200
+	if got != expected {
+		t.Errorf("fetch_arxiv_pdf estimator: got %d, want %d", got, expected)
+	}
+}
+
+func TestArxivPdfEstimator_CustomMaxLength(t *testing.T) {
+	estimators := ResearchToolEstimators()
+
+	// Custom max_length=20000 → ~5200 tokens (200 base + 5000 text)
+	got := estimators["fetch_arxiv_pdf"](map[string]any{"arxiv_id": "2301.00001", "max_length": float64(20000)})
+	expected := 5200
+	if got != expected {
+		t.Errorf("fetch_arxiv_pdf estimator with max_length=20000: got %d, want %d", got, expected)
+	}
+}
+
+func TestArxivPdfEstimator_MaxLengthCapped(t *testing.T) {
+	estimators := ResearchToolEstimators()
+
+	// max_length=100000 capped at 50000 → ~12700 tokens (200 base + 12500 text)
+	got := estimators["fetch_arxiv_pdf"](map[string]any{"arxiv_id": "2301.00001", "max_length": float64(100000)})
+	expected := 12700
+	if got != expected {
+		t.Errorf("fetch_arxiv_pdf estimator with capped max_length: got %d, want %d", got, expected)
 	}
 }
 
