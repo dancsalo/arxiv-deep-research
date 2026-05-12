@@ -24,7 +24,7 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 	for l.turnIndex < l.cfg.MaxTurns && !l.finished {
 		if ctx.Err() != nil {
 			l.logger.Info("loop.cancelled", "turn", l.turnIndex, "reason", ctx.Err())
-			return "", ctx.Err()
+			return l.partialResult, ctx.Err()
 		}
 
 		tokensUsed := l.manager.EstimateAllTokens()
@@ -94,11 +94,11 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 
 		if ctx.Err() != nil {
 			l.logger.Info("loop.cancelled", "turn", l.turnIndex, "reason", ctx.Err())
-			return "", ctx.Err()
+			return l.partialResult, ctx.Err()
 		}
 
 		if l.TotalCost() > l.cfg.MaxCostUSD {
-			return "", fmt.Errorf("cost limit exceeded: $%.4f > $%.4f", l.TotalCost(), l.cfg.MaxCostUSD)
+			return l.partialResult, fmt.Errorf("cost limit exceeded: $%.4f > $%.4f", l.TotalCost(), l.cfg.MaxCostUSD)
 		}
 
 		var toolResults []anthropic.ContentBlockParamUnion
@@ -267,7 +267,7 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 
 		if ctx.Err() != nil {
 			l.logger.Info("loop.cancelled", "turn", l.turnIndex, "reason", ctx.Err())
-			return "", ctx.Err()
+			return l.partialResult, ctx.Err()
 		}
 		if l.finished || resp.StopReason == "end_turn" {
 			if l.hooks.OnTurnEnd != nil {
@@ -289,6 +289,9 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 
 	if finishResult != "" {
 		return finishResult, nil
+	}
+	if l.partialResult != "" {
+		return l.partialResult, nil
 	}
 	return l.manager.ExtractFinalAnswer(), nil
 }
