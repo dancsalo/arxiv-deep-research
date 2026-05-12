@@ -464,14 +464,14 @@ func extractPdfText(pdfBytes []byte, maxLength int) (text string, pageCount int,
 
 	// Extract text from all pages
 	var textBuilder strings.Builder
-	fonts := make(map[string]*pdf.Font) // Font cache for text extraction
 	for i := 1; i <= pageCount; i++ {
 		page := reader.Page(i)
 		if page.V.IsNull() {
 			continue
 		}
 
-		pageText, err := page.GetPlainText(fonts)
+		// Extract plain text
+		pageText, err := page.GetPlainText(nil)
 		if err != nil {
 			// Log but continue - partial extraction is acceptable
 			continue
@@ -479,7 +479,6 @@ func extractPdfText(pdfBytes []byte, maxLength int) (text string, pageCount int,
 
 		// Check if we're approaching the limit
 		if textBuilder.Len()+len(pageText) > maxLength {
-			// Add partial page text to reach limit
 			remaining := maxLength - textBuilder.Len()
 			if remaining > 0 {
 				textBuilder.WriteString(pageText[:remaining])
@@ -488,12 +487,44 @@ func extractPdfText(pdfBytes []byte, maxLength int) (text string, pageCount int,
 		}
 
 		textBuilder.WriteString(pageText)
+
+		// Add page separator
 		if i < pageCount {
-			textBuilder.WriteString("\n\n") // Page separator
+			textBuilder.WriteString("\n\n")
 		}
 	}
 
-	return textBuilder.String(), pageCount, nil
+	// Post-process to fix common spacing issues
+	finalText := fixPdfSpacing(textBuilder.String())
+
+	// Truncate after fixing if needed
+	if len(finalText) > maxLength {
+		finalText = finalText[:maxLength]
+	}
+
+	return finalText, pageCount, nil
+}
+
+// fixPdfSpacing adds spaces where they're missing in PDF extraction.
+// Common patterns: lowercase-uppercase transitions, end of sentence, etc.
+func fixPdfSpacing(text string) string {
+	// Add space between lowercase and uppercase (e.g., "wordAnother" -> "word Another")
+	re1 := regexp.MustCompile(`([a-z])([A-Z])`)
+	text = re1.ReplaceAllString(text, "$1 $2")
+
+	// Add space after period/comma/colon if followed immediately by letter
+	re2 := regexp.MustCompile(`([.,;:!?])([A-Za-z])`)
+	text = re2.ReplaceAllString(text, "$1 $2")
+
+	// Add space between digit and letter (e.g., "2020The" -> "2020 The")
+	re3 := regexp.MustCompile(`(\d)([A-Za-z])`)
+	text = re3.ReplaceAllString(text, "$1 $2")
+
+	// Add space between letter and digit at word boundaries (e.g., "Section2" -> "Section 2")
+	re4 := regexp.MustCompile(`([a-z])(\d)`)
+	text = re4.ReplaceAllString(text, "$1 $2")
+
+	return text
 }
 
 // assessExtractionQuality returns "good", "poor", or "failed" based on
