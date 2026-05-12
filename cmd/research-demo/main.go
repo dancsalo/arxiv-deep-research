@@ -184,10 +184,25 @@ func main() {
 		if flushErr := recorder.Flush(); flushErr != nil {
 			logger.Error("failed to flush trace", "err", flushErr)
 		}
+
+		// Print partial results if available
+		if result != "" {
+			fmt.Println("=== Partial Research Summary ===")
+			fmt.Println("(Research incomplete due to error)")
+			fmt.Println()
+			fmt.Println(result)
+			fmt.Println()
+		}
+
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Printf("\n--- Stats ---\n")
+		fmt.Printf("Elapsed: %s\n", elapsed.Round(time.Millisecond))
+		fmt.Printf("Cost:    $%.4f\n", loop.TotalCost())
+		if traceCfg.Enabled() {
+			fmt.Printf("Trace:   %s/%s.json\n", traceCfg.Dir, sessionID)
+		}
 		os.Exit(1)
 	}
-
 	if err := recorder.Flush(); err != nil {
 		logger.Error("failed to flush trace", "err", err)
 	}

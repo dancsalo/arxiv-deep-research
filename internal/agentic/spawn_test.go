@@ -265,7 +265,11 @@ func TestLoopFinishResult(t *testing.T) {
 func TestLoopFinishResultFallback(t *testing.T) {
 	client := &scriptedMessageClient{
 		responses: []*anthropic.Message{
-			makeTextResponse("plain text answer"),
+			{
+				Content:    []anthropic.ContentBlockUnion{{Type: "text", Text: "plain text answer"}},
+				StopReason: "end_turn",
+				Usage:      anthropic.Usage{InputTokens: 100, OutputTokens: 50},
+			},
 		},
 	}
 	loop := newBasicAgenticLoop(client, nil, nil)
