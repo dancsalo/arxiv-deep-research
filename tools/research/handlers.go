@@ -631,7 +631,10 @@ func (r *ResearchToolSet) handleFetchArxivText(ctx context.Context, input json.R
 			Truncated:   false,
 			Error:       "HTML version not available for this paper",
 		}
-		b, _ := json.Marshal(result)
+		b, err := json.Marshal(result)
+		if err != nil {
+			return toolError("failed to marshal result: "+err.Error(), false), nil
+		}
 		return string(b), nil
 	}
 
@@ -655,8 +658,9 @@ func (r *ResearchToolSet) handleFetchArxivText(ctx context.Context, input json.R
 	// Truncate to max_length
 	textContent := article.TextContent
 	truncated := false
-	if len(textContent) > params.MaxLength {
-		textContent = textContent[:params.MaxLength]
+	if len([]rune(textContent)) > params.MaxLength {
+		runes := []rune(textContent)
+		textContent = string(runes[:params.MaxLength])
 		truncated = true
 	}
 
@@ -666,7 +670,10 @@ func (r *ResearchToolSet) handleFetchArxivText(ctx context.Context, input json.R
 		TextContent: textContent,
 		Truncated:   truncated,
 	}
-	b, _ := json.Marshal(result)
+	b, err := json.Marshal(result)
+	if err != nil {
+		return toolError("failed to marshal result: "+err.Error(), false), nil
+	}
 	return string(b), nil
 }
 
