@@ -192,3 +192,35 @@ func BuildFetchWebpageContentTool() anthropic.ToolUnionParam {
 	)
 	return t
 }
+
+type ArxivTextResult struct {
+	ArxivID     string `json:"arxiv_id"`
+	TextContent string `json:"text_content"`
+	Truncated   bool   `json:"truncated"`
+	Error       string `json:"error,omitempty"`
+}
+
+func BuildFetchArxivTextTool() anthropic.ToolUnionParam {
+	t := anthropic.ToolUnionParamOfTool(
+		anthropic.ToolInputSchemaParam{
+			Type: "object",
+			Properties: map[string]any{
+				"arxiv_id": map[string]any{
+					"type":        "string",
+					"description": "arXiv identifier. Formats: 2301.00001, arXiv:2301.00001, 2301.00001v2 (new), or astro-ph/9901234 (old)",
+				},
+				"max_length": map[string]any{
+					"type":        "integer",
+					"description": "Maximum text content length in characters (default 25000, max 25000)",
+					"default":     25000,
+				},
+			},
+			Required: []string{"arxiv_id"},
+		},
+		"fetch_arxiv_text",
+	)
+	t.OfTool.Description = anthropic.String(
+		"Fetches and extracts text content from an arXiv preprint HTML page. Returns cleaned article text extracted from arXiv's HTML rendering. Text is truncated to max_length (default/max 25000 characters). Not all papers have HTML versions - older papers or recent submissions may return an error. Rate limit: 1 request per 3 seconds per arXiv TOS.",
+	)
+	return t
+}
