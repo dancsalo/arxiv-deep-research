@@ -51,6 +51,7 @@ htmlcov/
 /research-demo
 /compare-traces
 /ctxmgr-demo
+/trace-viewer
 examples/*/basic-tool-use
 examples/*/parallel-tool-use
 

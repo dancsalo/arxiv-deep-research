@@ -1,0 +1,131 @@
+{
+  "session_id": "error-session-321",
+  "query": "Find papers on quantum computing with network failures",
+  "model": "claude-sonnet-4-20250514",
+  "prompt_variant": "A",
+  "prompt_hash": "jkl23456",
+  "started_at": "2024-04-20T16:00:00Z",
+  "ended_at": "2024-04-20T16:08:45Z",
+  "duration_ms": 525000,
+  "status": "error",
+  "error": "Tool execution failed: arxiv_search timed out after multiple retries",
+  "total_input_tokens": 4500,
+  "total_output_tokens": 1200,
+  "total_cost_usd": 0.0678,
+  "turns": [
+    {
+      "index": 0,
+      "started_at": "2024-04-20T16:00:00Z",
+      "ended_at": "2024-04-20T16:02:30Z",
+      "duration_ms": 150000,
+      "tokens_used": 1800,
+      "tokens_remaining": 94200,
+      "cost_usd": 0.0234,
+      "llm_call": {
+        "model": "claude-sonnet-4-20250514",
+        "input_tokens": 1200,
+        "output_tokens": 350,
+        "duration_ms": 4000,
+        "stop_reason": "tool_use"
+      },
+      "tool_calls": [
+        {
+          "name": "arxiv_search",
+          "input": "{\"query\": \"quantum computing\", \"max_results\": 30}",
+          "output": null,
+          "input_length": 72,
+          "result_length": 0,
+          "duration_ms": 8500,
+          "error": {
+            "type": "RateLimitError",
+            "message": "Rate limit exceeded: 429 Too Many Requests. Quota resets in 1800s",
+            "retryable": true,
+            "attempted_retries": 0,
+            "suggested_action": "Wait 1800 seconds before retrying or use alternative search provider"
+          }
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "started_at": "2024-04-20T16:02:30Z",
+      "ended_at": "2024-04-20T16:05:15Z",
+      "duration_ms": 165000,
+      "tokens_used": 2100,
+      "tokens_remaining": 92100,
+      "cost_usd": 0.0289,
+      "llm_call": {
+        "model": "claude-sonnet-4-20250514",
+        "input_tokens": 1500,
+        "output_tokens": 420,
+        "duration_ms": 4500,
+        "stop_reason": "tool_use"
+      },
+      "tool_calls": [
+        {
+          "name": "fetch_paper",
+          "input": "{\"arxiv_id\": \"2404.11111\"}",
+          "output": null,
+          "input_length": 38,
+          "result_length": 0,
+          "duration_ms": 15000,
+          "error": {
+            "type": "NetworkError",
+            "message": "Connection timeout: arxiv.org did not respond within 15s",
+            "retryable": true,
+            "attempted_retries": 3,
+            "suggested_action": "Check network connectivity or try again later"
+          }
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "started_at": "2024-04-20T16:05:15Z",
+      "ended_at": "2024-04-20T16:08:45Z",
+      "duration_ms": 210000,
+      "tokens_used": 600,
+      "tokens_remaining": 91500,
+      "cost_usd": 0.0155,
+      "llm_call": {
+        "model": "claude-sonnet-4-20250514",
+        "input_tokens": 1800,
+        "output_tokens": 430,
+        "duration_ms": 5000,
+        "stop_reason": "tool_use"
+      },
+      "tool_calls": [
+        {
+          "name": "openalex_search",
+          "input": "{\"query\": \"quantum computing applications\"}",
+          "output": null,
+          "input_length": 58,
+          "result_length": 0,
+          "duration_ms": 30000,
+          "error": {
+            "type": "APIError",
+            "message": "OpenAlex API returned 503: Service temporarily unavailable",
+            "retryable": true,
+            "attempted_retries": 2,
+            "suggested_action": "Wait for service to recover and retry"
+          }
+        },
+        {
+          "name": "web_search",
+          "input": "{\"query\": \"quantum computing recent research\"}",
+          "output": null,
+          "input_length": 62,
+          "result_length": 0,
+          "duration_ms": 45000,
+          "error": {
+            "type": "RateLimitError",
+            "message": "Rate limit exceeded: 429 Too Many Requests. Quota resets in 3600s",
+            "retryable": true,
+            "attempted_retries": 0,
+            "suggested_action": "Wait 3600 seconds before retrying or use alternative search provider"
+          }
+        }
+      ]
+    }
+  ]
+}

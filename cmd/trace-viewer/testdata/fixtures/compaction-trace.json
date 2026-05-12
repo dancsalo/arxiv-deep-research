@@ -1,0 +1,194 @@
+{
+  "session_id": "compaction-session-789",
+  "query": "Comprehensive analysis of deep learning optimization techniques with extensive tool usage",
+  "model": "claude-opus-4-20250514",
+  "prompt_variant": "C",
+  "prompt_hash": "ghi78901",
+  "started_at": "2024-03-05T09:15:00Z",
+  "ended_at": "2024-03-05T09:45:20Z",
+  "duration_ms": 1820000,
+  "status": "success",
+  "total_input_tokens": 75000,
+  "total_output_tokens": 12000,
+  "total_cost_usd": 1.2345,
+  "turns": [
+    {
+      "index": 0,
+      "started_at": "2024-03-05T09:15:00Z",
+      "ended_at": "2024-03-05T09:20:30Z",
+      "duration_ms": 330000,
+      "tokens_used": 18000,
+      "tokens_remaining": 78000,
+      "cost_usd": 0.2145,
+      "llm_call": {
+        "model": "claude-opus-4-20250514",
+        "input_tokens": 2000,
+        "output_tokens": 800,
+        "duration_ms": 6500,
+        "stop_reason": "tool_use"
+      },
+      "tool_calls": [
+        {
+          "name": "arxiv_search",
+          "input": "{\"query\": \"deep learning optimization\", \"max_results\": 50}",
+          "output": "{\"results\": [/* 50 papers with full metadata */]}",
+          "input_length": 85,
+          "result_length": 25000,
+          "duration_ms": 5200
+        },
+        {
+          "name": "openalex_search",
+          "input": "{\"query\": \"SGD Adam optimizers\", \"max_results\": 40}",
+          "output": "{\"results\": [/* 40 papers with citations */]}",
+          "input_length": 78,
+          "result_length": 22000,
+          "duration_ms": 4800
+        }
+      ],
+      "guardrail_decisions": [
+        {
+          "tool_name": "arxiv_search",
+          "proceed": true,
+          "reason": "within budget",
+          "estimated_tokens": 8000,
+          "tokens_remaining": 78000,
+          "safety_margin": 20000,
+          "args_modified": false,
+          "compacted": false
+        },
+        {
+          "tool_name": "openalex_search",
+          "proceed": true,
+          "reason": "within budget",
+          "estimated_tokens": 7500,
+          "tokens_remaining": 70000,
+          "safety_margin": 20000,
+          "args_modified": false,
+          "compacted": false
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "started_at": "2024-03-05T09:20:30Z",
+      "ended_at": "2024-03-05T09:28:15Z",
+      "duration_ms": 465000,
+      "tokens_used": 32000,
+      "tokens_remaining": 46000,
+      "cost_usd": 0.4567,
+      "llm_call": {
+        "model": "claude-opus-4-20250514",
+        "input_tokens": 25000,
+        "output_tokens": 1200,
+        "duration_ms": 12000,
+        "stop_reason": "tool_use"
+      },
+      "tool_calls": [
+        {
+          "name": "fetch_paper",
+          "input": "{\"arxiv_id\": \"2312.11111\"}",
+          "output": "{\"title\": \"Large-scale optimization\", \"full_text\": \"...\"}",
+          "input_length": 45,
+          "result_length": 35000,
+          "duration_ms": 8500
+        }
+      ],
+      "guardrail_decisions": [
+        {
+          "tool_name": "fetch_paper",
+          "proceed": true,
+          "reason": "compaction performed to fit within budget",
+          "estimated_tokens": 12000,
+          "tokens_remaining": 46000,
+          "safety_margin": 20000,
+          "args_modified": false,
+          "compacted": true,
+          "compacted_turns": [0],
+          "removed_content": {
+            "tool_results_count": 2,
+            "message_count": 1,
+            "summary_tokens": 450
+          }
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "started_at": "2024-03-05T09:28:15Z",
+      "ended_at": "2024-03-05T09:35:45Z",
+      "duration_ms": 450000,
+      "tokens_used": 15000,
+      "tokens_remaining": 31000,
+      "cost_usd": 0.3234,
+      "llm_call": {
+        "model": "claude-opus-4-20250514",
+        "input_tokens": 12000,
+        "output_tokens": 950,
+        "duration_ms": 9500,
+        "stop_reason": "tool_use"
+      },
+      "tool_calls": [
+        {
+          "name": "web_search",
+          "input": "{\"query\": \"latest optimization benchmarks 2024\"}",
+          "output": "{\"results\": [/* 20 web results with snippets */]}",
+          "input_length": 65,
+          "result_length": 18000,
+          "duration_ms": 3200
+        }
+      ],
+      "guardrail_decisions": [
+        {
+          "tool_name": "web_search",
+          "proceed": true,
+          "reason": "compaction performed to fit within budget",
+          "estimated_tokens": 6500,
+          "tokens_remaining": 31000,
+          "safety_margin": 20000,
+          "args_modified": false,
+          "compacted": true,
+          "compacted_turns": [0, 1],
+          "removed_content": {
+            "tool_results_count": 3,
+            "message_count": 2,
+            "summary_tokens": 850
+          }
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "started_at": "2024-03-05T09:35:45Z",
+      "ended_at": "2024-03-05T09:45:20Z",
+      "duration_ms": 575000,
+      "tokens_used": 10000,
+      "tokens_remaining": 21000,
+      "cost_usd": 0.2399,
+      "llm_call": {
+        "model": "claude-opus-4-20250514",
+        "input_tokens": 8000,
+        "output_tokens": 9050,
+        "duration_ms": 22000,
+        "stop_reason": "end_turn"
+      },
+      "tool_calls": []
+    }
+  ],
+  "guardrail_decisions": [
+    {
+      "tool_name": "context_compaction",
+      "proceed": true,
+      "reason": "proactive compaction at 75% budget threshold",
+      "estimated_tokens": 0,
+      "tokens_remaining": 25000,
+      "safety_margin": 20000,
+      "compacted": true,
+      "compacted_turns": [0, 1],
+      "removed_content": {
+        "tool_results_count": 3,
+        "message_count": 2,
+        "summary_tokens": 850
+      }
+    }
+  ]
+}
