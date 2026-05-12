@@ -758,6 +758,53 @@ func TestAgenticLoopTurnStateTokenCounts(t *testing.T) {
 	}
 }
 
+func TestPartialResultAccumulation(t *testing.T) {
+	client := &scriptedMessageClient{
+		responses: []*anthropic.Message{
+			makeTextResponse("First turn text"),
+			makeTextResponse("Second turn text"),
+			makeTextResponse("Third turn text"),
+		},
+	}
+
+	hooks := &LoopHooks{
+		OnTurnEnd: func(_ context.Context, state TurnState) error {
+			t.Logf("Turn %d end - Accumulated result: %s", state.TurnIndex, state.AssistantText)
+			return nil
+		},
+	}
+
+	// Create a custom agenticLoop to access the partialResult field
+	manager := newAgenticLoopManager()
+	reg := registry.NewToolRegistry()
+	reg.Register("finish", BuildFinishTool(), func(_ context.Context, input json.RawMessage) (string, error) {
+		return string(input), nil
+	})
+
+	// Modify client to return final response once exhausted
+	lastResponse := client.responses[len(client.responses)-1]
+	lastResponse.StopReason = "end_turn"
+
+	loop := NewAgenticLoop(client, manager, reg, nil, AgenticLoopConfig{
+		MaxTurns:   3,
+		MaxCostUSD: 1.0,
+		Model:      anthropic.ModelClaudeHaiku4_5,
+		FinishTool: "finish",
+		Hooks:      hooks,
+	}, nil)
+
+	result, err := loop.Run(bgctx(), "test")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := "First turn textSecond turn textThird turn text"
+	if result != expected {
+		t.Errorf("result = %q, want %q", result, expected)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
 }
