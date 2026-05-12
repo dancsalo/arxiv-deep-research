@@ -35,6 +35,18 @@ func ResearchToolEstimators() map[string]func(args map[string]any) int {
 
 			return base + textTokens
 		},
+		"fetch_arxiv_text": func(args map[string]any) int {
+			maxLength := 25000
+			if ml, ok := args["max_length"].(float64); ok && ml > 0 {
+				maxLength = int(ml)
+				if maxLength > 25000 {
+					maxLength = 25000
+				}
+			}
+			// Estimate ~4 chars per token for text content
+			// Add 100 tokens for JSON structure overhead
+			return (maxLength / 4) + 100
+		},
 		"search_github_repos": func(args map[string]any) int {
 			// Estimate: base overhead + query + results
 			// Each result: ~200 tokens (name, desc, metadata, URL)
