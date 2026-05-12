@@ -22,9 +22,11 @@ func runInteractive(ctx context.Context, toolset *research.ResearchToolSet) erro
 		fmt.Println("Select a tool:")
 		fmt.Println("  [1] search-arxiv        - Search arXiv for preprints")
 		fmt.Println("  [2] search-openalex     - Search academic literature")
-		fmt.Println("  [3] fetch-pdf           - Get arXiv PDF download URL")
+		fmt.Println("  [3] fetch-pdf           - Extract text from arXiv PDF")
 		fmt.Println("  [4] search-github       - Find GitHub repositories")
 		fmt.Println("  [5] search-web          - Search the general web")
+		fmt.Println("  [6] get-citations       - Get citations and references")
+		fmt.Println("  [7] fetch-webpage       - Fetch webpage content")
 		fmt.Println("  [0] Exit")
 		fmt.Println()
 
@@ -57,6 +59,14 @@ func runInteractive(ctx context.Context, toolset *research.ResearchToolSet) erro
 			}
 		case "5":
 			if err := interactiveSearchWeb(ctx, toolset, reader); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+			}
+		case "6":
+			if err := interactiveGetCitations(ctx, toolset, reader); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+			}
+		case "7":
+			if err := interactiveFetchWebpage(ctx, toolset, reader); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 			}
 		default:
@@ -199,10 +209,26 @@ func interactiveFetchPdf(ctx context.Context, toolset *research.ResearchToolSet,
 		return fmt.Errorf("arXiv ID cannot be empty")
 	}
 
-	fmt.Println("\nFetching PDF URL...")
+	fmt.Print("Max length [8000]: ")
+	maxLengthStr, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	maxLengthStr = strings.TrimSpace(maxLengthStr)
+
+	maxLength := 8000
+	if maxLengthStr != "" {
+		maxLength, err = strconv.Atoi(maxLengthStr)
+		if err != nil {
+			return fmt.Errorf("invalid max length: %w", err)
+		}
+	}
+
+	fmt.Println("\nFetching PDF content...")
 
 	input := map[string]interface{}{
-		"arxiv_id": arxivID,
+		"arxiv_id":   arxivID,
+		"max_length": maxLength,
 	}
 	inputJSON, err := json.Marshal(input)
 	if err != nil {
@@ -312,4 +338,111 @@ func interactiveSearchWeb(ctx context.Context, toolset *research.ResearchToolSet
 
 	fmt.Println("\n=== Results ===")
 	return formatOutput(os.Stdout, "search-web", result, false)
+}
+
+func interactiveGetCitations(ctx context.Context, toolset *research.ResearchToolSet, reader *bufio.Reader) error {
+	fmt.Println("\n--- get-citations ---")
+
+	fmt.Print("Work ID (e.g., W2741809807): ")
+	workID, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	workID = strings.TrimSpace(workID)
+	if workID == "" {
+		return fmt.Errorf("work ID cannot be empty")
+	}
+
+	fmt.Print("Direction (references or cited_by): ")
+	direction, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	direction = strings.TrimSpace(direction)
+	if direction == "" {
+		return fmt.Errorf("direction cannot be empty")
+	}
+
+	fmt.Print("Max results [10]: ")
+	maxResultsStr, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	maxResultsStr = strings.TrimSpace(maxResultsStr)
+
+	maxResults := 10
+	if maxResultsStr != "" {
+		maxResults, err = strconv.Atoi(maxResultsStr)
+		if err != nil {
+			return fmt.Errorf("invalid max results: %w", err)
+		}
+	}
+
+	fmt.Println("\nFetching citations...")
+
+	input := map[string]interface{}{
+		"work_id":     workID,
+		"direction":   direction,
+		"max_results": maxResults,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+
+	result, err := callToolHandler(ctx, toolset, "get_citations_and_references", inputJSON)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("\n=== Results ===")
+	return formatOutput(os.Stdout, "get-citations", result, false)
+}
+
+func interactiveFetchWebpage(ctx context.Context, toolset *research.ResearchToolSet, reader *bufio.Reader) error {
+	fmt.Println("\n--- fetch-webpage ---")
+
+	fmt.Print("URL: ")
+	url, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	url = strings.TrimSpace(url)
+	if url == "" {
+		return fmt.Errorf("URL cannot be empty")
+	}
+
+	fmt.Print("Max length [8000]: ")
+	maxLengthStr, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	maxLengthStr = strings.TrimSpace(maxLengthStr)
+
+	maxLength := 8000
+	if maxLengthStr != "" {
+		maxLength, err = strconv.Atoi(maxLengthStr)
+		if err != nil {
+			return fmt.Errorf("invalid max length: %w", err)
+		}
+	}
+
+	fmt.Println("\nFetching webpage...")
+
+	input := map[string]interface{}{
+		"url":        url,
+		"max_length": maxLength,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+
+	result, err := callToolHandler(ctx, toolset, "fetch_webpage_content", inputJSON)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("\n=== Result ===")
+	return formatOutput(os.Stdout, "fetch-webpage", result, false)
 }

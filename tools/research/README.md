@@ -68,24 +68,26 @@ tools-cli search-openalex "transformers" --sort cited_by_count
 
 ### fetch_arxiv_pdf
 
-Gets the PDF download URL for an arXiv paper (with 3-second rate limiting).
+Fetches and extracts text content from an arXiv preprint PDF.
 
 **Input:**
-- `arxiv_id` (string, required): arXiv identifier (e.g., "2301.00001", "arXiv:2301.00001", "astro-ph/9901234")
+- `arxiv_id` (string, required): arXiv identifier. Formats: 2301.00001, arXiv:2301.00001, 2301.00001v2 (new), or astro-ph/9901234 (old)
+- `max_length` (integer, optional): Maximum text content length in characters (default: 8000, max: 50000)
 
 **Output:**
-- Object with arxiv_id and pdf_url
+- Object with arxiv_id, pdf_url, text_content, page_count, character_count, extraction_quality ('good', 'poor', or 'failed'), and truncated flag
 
 **Example:**
 ```bash
 tools-cli fetch-pdf "1706.03762"
+tools-cli fetch-pdf "2301.00001" --max-length 15000
 ```
 
-**Use case:** Getting downloadable PDF URLs for papers
+**Use case:** Getting full text content from arXiv papers for detailed analysis. Extraction quality indicates reliability: 'good' (reliable text extraction), 'poor' (low text density, likely image-based), or 'failed' (extraction error).
 
 **Implementation:** `handlers.go:handleFetchArxivPDF()`
 
-**Rate limiting:** 3-second delay enforced per request
+**Rate limiting:** 3-second delay enforced per request per arXiv Terms of Service
 
 ---
 
