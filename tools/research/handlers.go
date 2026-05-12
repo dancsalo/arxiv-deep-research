@@ -416,6 +416,27 @@ func extractPdfText(pdfBytes []byte, maxLength int) (text string, pageCount int,
 	return textBuilder.String(), pageCount, nil
 }
 
+// assessExtractionQuality returns "good", "poor", or "failed" based on
+// extraction results. charCount is before truncation, errorMsg is empty on success.
+func assessExtractionQuality(charCount, pageCount int, errorMsg string) string {
+	if errorMsg != "" || pageCount == 0 {
+		return "failed"
+	}
+
+	// Calculate text density (chars per page)
+	density := 0
+	if pageCount > 0 {
+		density = charCount / pageCount
+	}
+
+	// Good: high density and sufficient text
+	if density > 100 && charCount > 1000 {
+		return "good"
+	}
+
+	return "poor"
+}
+
 func normalizeArxivID(id string) (normalized string, version string, err error) {
 	// Strip common prefixes and whitespace
 	id = strings.TrimSpace(id)
