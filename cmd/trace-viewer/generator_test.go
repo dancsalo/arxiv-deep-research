@@ -141,6 +141,76 @@ func TestGenerateHTML_XSSProtection(t *testing.T) {
 	}
 }
 
+func TestGenerateHTML_CompactionEvents(t *testing.T) {
+	// Load compaction trace fixture which contains guardrail decisions
+	fixturePath := filepath.Join("testdata", "fixtures", "compaction-trace.json")
+	traceData, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+
+	var trace tracing.Trace
+	if err := json.Unmarshal(traceData, &trace); err != nil {
+		t.Fatalf("failed to unmarshal fixture: %v", err)
+	}
+
+	// Generate HTML
+	features := DetectSchemaFeatures(&trace)
+	outputPath := filepath.Join(t.TempDir(), "compaction-events.html")
+
+	if err := GenerateHTML(&trace, features, outputPath); err != nil {
+		t.Fatalf("GenerateHTML failed: %v", err)
+	}
+
+	// Read generated HTML
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+
+	html := string(content)
+
+	// Verify event-related CSS classes exist
+	expectedStyles := []string{
+		".event-node",
+		".event-node.guardrail",
+		".event-node-type",
+		".event-node-label",
+		".event-detail-panel",
+	}
+
+	for _, style := range expectedStyles {
+		if !strings.Contains(html, style) {
+			t.Errorf("missing CSS for: %s", style)
+		}
+	}
+
+	// Verify JavaScript functions for events exist
+	expectedFunctions := []string{
+		"collectTimelineItems",
+		"renderEventNode",
+		"renderEventDetailPanel",
+		"toggleEvent",
+		"findEvent",
+	}
+
+	for _, fn := range expectedFunctions {
+		if !strings.Contains(html, fn) {
+			t.Errorf("missing JavaScript function: %s", fn)
+		}
+	}
+
+	// Verify expandedEvents state is initialized
+	if !strings.Contains(html, "expandedEvents") {
+		t.Error("missing expandedEvents state management")
+	}
+
+	// Verify trace data includes guardrail_decisions
+	if !strings.Contains(html, `"guardrail_decisions"`) {
+		t.Error("guardrail_decisions not embedded in trace data")
+	}
+}
+
 func TestGenerateHTML_Integration(t *testing.T) {
 	fixtures := []struct {
 		name            string

@@ -107,6 +107,64 @@ const htmlTemplate = `<!DOCTYPE html>
             align-self: center;
         }
 
+        .event-node {
+            width: 80px;
+            height: 40px;
+            border: 2px dashed #f39c12;
+            border-radius: 6px;
+            background: #fff9e6;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.1s;
+            font-size: 9px;
+        }
+
+        .event-node:hover {
+            background: #fff3cc;
+            border-color: #e67e22;
+        }
+
+        .event-node.expanded {
+            border-color: #d35400;
+            background: #ffe6cc;
+        }
+
+        .event-node.guardrail {
+            border-color: #27ae60;
+            background: #e8f8f5;
+        }
+
+        .event-node.guardrail:hover {
+            background: #d5f4e6;
+            border-color: #229954;
+        }
+
+        .event-node.guardrail.expanded {
+            border-color: #1e8449;
+            background: #c9e8d9;
+        }
+
+        .event-node-type {
+            font-weight: 600;
+            color: #7d6608;
+            text-transform: uppercase;
+            font-size: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .event-node.guardrail .event-node-type {
+            color: #145a32;
+        }
+
+        .event-node-label {
+            font-size: 9px;
+            color: #666;
+            margin-top: 2px;
+        }
+
         .detail-panel {
             margin-left: 72px;
             margin-top: 12px;
@@ -116,6 +174,22 @@ const htmlTemplate = `<!DOCTYPE html>
             border-radius: 6px;
             padding: 16px;
             max-width: 700px;
+        }
+
+        .event-detail-panel {
+            margin-left: 72px;
+            margin-top: 12px;
+            margin-bottom: 20px;
+            background: #fff9e6;
+            border-left: 4px solid #f39c12;
+            border-radius: 6px;
+            padding: 16px;
+            max-width: 700px;
+        }
+
+        .event-detail-panel.guardrail {
+            background: #e8f8f5;
+            border-left-color: #27ae60;
         }
 
         .detail-header {
@@ -206,7 +280,8 @@ const htmlTemplate = `<!DOCTYPE html>
 
         // State management
         const state = {
-            expandedTurns: new Set()
+            expandedTurns: new Set(),
+            expandedEvents: new Set()
         };
 
         // Initialize timeline
@@ -219,13 +294,20 @@ const htmlTemplate = `<!DOCTYPE html>
             const timelineDiv = document.createElement('div');
             timelineDiv.className = 'timeline-container';
 
-            trace.turns.forEach((turn, index) => {
-                // Render turn node
-                const node = renderTurnNode(turn, index);
-                timelineDiv.appendChild(node);
+            // Collect and merge turns and events into a single timeline
+            const items = collectTimelineItems();
+
+            items.forEach((item, index) => {
+                if (item.type === 'turn') {
+                    const node = renderTurnNode(item.turn, item.turnIndex);
+                    timelineDiv.appendChild(node);
+                } else if (item.type === 'event') {
+                    const node = renderEventNode(item.event, item.eventIndex, item.turnIndex);
+                    timelineDiv.appendChild(node);
+                }
 
                 // Add edge if not last
-                if (index < trace.turns.length - 1) {
+                if (index < items.length - 1) {
                     const edge = document.createElement('div');
                     edge.className = 'edge';
                     timelineDiv.appendChild(edge);
@@ -238,6 +320,49 @@ const htmlTemplate = `<!DOCTYPE html>
             state.expandedTurns.forEach(turnIndex => {
                 renderDetailPanel(trace.turns[turnIndex], turnIndex);
             });
+
+            // Render detail panels for expanded events
+            state.expandedEvents.forEach(eventKey => {
+                const event = findEvent(eventKey);
+                if (event) {
+                    renderEventDetailPanel(event.decision, event.turnIndex, event.eventIndex);
+                }
+            });
+        }
+
+        function collectTimelineItems() {
+            const items = [];
+
+            trace.turns.forEach((turn, turnIndex) => {
+                // Add turn
+                items.push({ type: 'turn', turn: turn, turnIndex: turnIndex });
+
+                // Add turn-level guardrail decisions as events after the turn
+                if (turn.guardrail_decisions && turn.guardrail_decisions.length > 0) {
+                    turn.guardrail_decisions.forEach((decision, eventIndex) => {
+                        items.push({
+                            type: 'event',
+                            event: decision,
+                            turnIndex: turnIndex,
+                            eventIndex: eventIndex
+                        });
+                    });
+                }
+            });
+
+            // Add trace-level guardrail decisions at the end
+            if (trace.guardrail_decisions && trace.guardrail_decisions.length > 0) {
+                trace.guardrail_decisions.forEach((decision, eventIndex) => {
+                    items.push({
+                        type: 'event',
+                        event: decision,
+                        turnIndex: -1,  // Trace-level event
+                        eventIndex: eventIndex
+                    });
+                });
+            }
+
+            return items;
         }
 
         function renderTurnNode(turn, index) {
@@ -261,6 +386,38 @@ const htmlTemplate = `<!DOCTYPE html>
             node.appendChild(tokens);
 
             node.onclick = () => toggleTurn(index);
+
+            return node;
+        }
+
+        function renderEventNode(decision, eventIndex, turnIndex) {
+            const node = document.createElement('div');
+            node.className = 'event-node';
+
+            // Add guardrail class for guardrail-related events
+            if (decision.tool_name && decision.tool_name !== 'context_compaction') {
+                node.classList.add('guardrail');
+            }
+
+            const eventKey = turnIndex + '-' + eventIndex;
+            node.id = 'event-' + eventKey;
+
+            if (state.expandedEvents.has(eventKey)) {
+                node.classList.add('expanded');
+            }
+
+            const type = document.createElement('div');
+            type.className = 'event-node-type';
+            type.textContent = decision.compacted ? 'Compact' : 'Guard';
+
+            const label = document.createElement('div');
+            label.className = 'event-node-label';
+            label.textContent = decision.tool_name || 'system';
+
+            node.appendChild(type);
+            node.appendChild(label);
+
+            node.onclick = () => toggleEvent(eventKey);
 
             return node;
         }
@@ -304,6 +461,71 @@ const htmlTemplate = `<!DOCTYPE html>
             timeline.appendChild(panel);
         }
 
+        function renderEventDetailPanel(decision, turnIndex, eventIndex) {
+            const timeline = document.getElementById('timeline');
+            const eventKey = turnIndex + '-' + eventIndex;
+
+            // Remove existing panel if present
+            const existingPanel = document.getElementById('event-detail-' + eventKey);
+            if (existingPanel) {
+                existingPanel.remove();
+            }
+
+            const panel = document.createElement('div');
+            panel.className = 'event-detail-panel';
+            panel.id = 'event-detail-' + eventKey;
+
+            // Add guardrail class for styling
+            if (decision.tool_name && decision.tool_name !== 'context_compaction') {
+                panel.classList.add('guardrail');
+            }
+
+            const eventType = decision.compacted ? 'Compaction' : 'Guardrail';
+            const location = turnIndex >= 0 ? 'Turn ' + turnIndex : 'Trace-level';
+
+            let detailsHTML = ` + "`" + `
+                <div class="detail-header">
+                    <div class="detail-title">${eventType} Event (${location})</div>
+                    <div class="detail-close" onclick="toggleEvent('${eventKey}')">×</div>
+                </div>
+                <div class="detail-metrics">
+                    <div><strong>Tool:</strong> ${decision.tool_name}</div>
+                    <div><strong>Proceed:</strong> ${decision.proceed ? 'Yes' : 'No'}</div>
+                    <div><strong>Tokens:</strong> ${decision.estimated_tokens}</div>
+                </div>
+            ` + "`" + `;
+
+            if (decision.reason) {
+                detailsHTML += ` + "`" + `<div style="margin-top: 10px; font-size: 11px; color: #666;"><strong>Reason:</strong> ${decision.reason}</div>` + "`" + `;
+            }
+
+            if (decision.compacted && decision.removed_content) {
+                detailsHTML += ` + "`" + `
+                    <div style="margin-top: 10px; border-top: 1px solid #ddd; padding-top: 10px;">
+                        <div style="font-weight: 600; font-size: 10px; color: #888; margin-bottom: 6px;">Removed Content:</div>
+                        <div style="font-size: 11px; color: #666;">
+                            <div><strong>Tool Results:</strong> ${decision.removed_content.tool_results_count}</div>
+                            <div><strong>Messages:</strong> ${decision.removed_content.message_count}</div>
+                            <div><strong>Summary Tokens:</strong> ${decision.removed_content.summary_tokens}</div>
+                        </div>
+                    </div>
+                ` + "`" + `;
+            }
+
+            if (decision.compacted_turns && decision.compacted_turns.length > 0) {
+                detailsHTML += ` + "`" + `
+                    <div style="margin-top: 8px; font-size: 11px; color: #666;">
+                        <strong>Compacted Turns:</strong> ${decision.compacted_turns.join(', ')}
+                    </div>
+                ` + "`" + `;
+            }
+
+            panel.innerHTML = detailsHTML;
+
+            // Insert after the event node's parent container
+            timeline.appendChild(panel);
+        }
+
         function toggleTurn(index) {
             if (state.expandedTurns.has(index)) {
                 state.expandedTurns.delete(index);
@@ -311,6 +533,37 @@ const htmlTemplate = `<!DOCTYPE html>
                 state.expandedTurns.add(index);
             }
             renderTimeline();
+        }
+
+        function toggleEvent(eventKey) {
+            if (state.expandedEvents.has(eventKey)) {
+                state.expandedEvents.delete(eventKey);
+            } else {
+                state.expandedEvents.add(eventKey);
+            }
+            renderTimeline();
+        }
+
+        function findEvent(eventKey) {
+            const [turnIndexStr, eventIndexStr] = eventKey.split('-');
+            const turnIndex = parseInt(turnIndexStr);
+            const eventIndex = parseInt(eventIndexStr);
+
+            if (turnIndex >= 0 && trace.turns[turnIndex] && trace.turns[turnIndex].guardrail_decisions) {
+                const decision = trace.turns[turnIndex].guardrail_decisions[eventIndex];
+                if (decision) {
+                    return { decision, turnIndex, eventIndex };
+                }
+            }
+
+            if (turnIndex === -1 && trace.guardrail_decisions) {
+                const decision = trace.guardrail_decisions[eventIndex];
+                if (decision) {
+                    return { decision, turnIndex, eventIndex };
+                }
+            }
+
+            return null;
         }
 
         function formatTokens(tokens) {
