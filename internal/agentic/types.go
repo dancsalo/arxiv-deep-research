@@ -96,6 +96,7 @@ type Loop struct {
 	logger        *slog.Logger
 	depth         int
 	mu            sync.Mutex
+	partialResult string  // Accumulated assistant text across turns
 }
 
 func NewLoop(
