@@ -99,11 +99,30 @@ func formatPdfResult(w io.Writer, result string) error {
 	}
 
 	arxivID, _ := data["arxiv_id"].(string)
-	pdfURL, _ := data["pdf_url"].(string)
+	textContent, _ := data["text_content"].(string)
+	pageCount, _ := data["page_count"].(float64)
+	charCount, _ := data["char_count"].(float64)
+	quality, _ := data["extraction_quality"].(string)
+	truncated, _ := data["truncated"].(bool)
+	errorMsg, _ := data["error"].(string)
 
-	fmt.Fprintf(w, "=== arXiv PDF URL ===\n\n")
+	fmt.Fprintf(w, "=== arXiv PDF Text Extraction ===\n\n")
 	fmt.Fprintf(w, "arXiv ID: %s\n", arxivID)
-	fmt.Fprintf(w, "PDF URL:  %s\n", pdfURL)
+	fmt.Fprintf(w, "Pages: %.0f\n", pageCount)
+	fmt.Fprintf(w, "Characters: %.0f\n", charCount)
+	fmt.Fprintf(w, "Quality: %s\n", quality)
+	if truncated {
+		fmt.Fprintf(w, "Truncated: yes\n")
+	}
+	if errorMsg != "" {
+		fmt.Fprintf(w, "Error: %s\n", errorMsg)
+	}
+	fmt.Fprintf(w, "\n--- Text Content (first 500 chars) ---\n")
+	if len(textContent) > 500 {
+		fmt.Fprintf(w, "%s...\n", textContent[:500])
+	} else {
+		fmt.Fprintf(w, "%s\n", textContent)
+	}
 	return nil
 }
 
