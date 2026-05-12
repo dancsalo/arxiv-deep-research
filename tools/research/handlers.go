@@ -576,6 +576,100 @@ func normalizeArxivID(id string) (normalized string, version string, err error) 
 	return id, version, nil
 }
 
+func (r *ResearchToolSet) handleFetchArxivText(ctx context.Context, input json.RawMessage) (string, error) {
+	// Parse and validate input
+	var params struct {
+		ArxivID   string `json:"arxiv_id"`
+		MaxLength int    `json:"max_length"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return toolError("invalid input: "+err.Error(), false), nil
+	}
+
+	// Validate arxiv_id required
+	if params.ArxivID == "" {
+		return toolError("arxiv_id is required", false), nil
+	}
+
+	// Apply max_length constraints (default 25000, max 25000)
+	if params.MaxLength <= 0 {
+		params.MaxLength = 25000
+	}
+	if params.MaxLength > 25000 {
+		params.MaxLength = 25000
+	}
+
+	// Normalize arXiv ID (reuse existing function)
+	normalized, _, err := normalizeArxivID(params.ArxivID)
+	if err != nil {
+		return toolError("invalid arXiv ID format: "+err.Error(), false), nil
+	}
+
+	// Construct HTML URL
+	htmlURL := fmt.Sprintf("https://arxiv.org/html/%s", normalized)
+
+	// Rate limit (reuse existing rate limiter)
+	r.arxivRateLimiter.Wait()
+
+	// Fetch HTML
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, htmlURL, nil)
+	if err != nil {
+		return toolError("failed to create request: "+err.Error(), false), nil
+	}
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return toolError("request failed: "+err.Error(), true), nil
+	}
+	defer resp.Body.Close()
+
+	// Check HTML availability
+	if resp.StatusCode == http.StatusNotFound {
+		result := ArxivTextResult{
+			ArxivID:     normalized,
+			TextContent: "",
+			Truncated:   false,
+			Error:       "HTML version not available for this paper",
+		}
+		b, _ := json.Marshal(result)
+		return string(b), nil
+	}
+
+	// Handle other error status codes
+	if resp.StatusCode != http.StatusOK {
+		return toolError(fmt.Sprintf("arXiv returned status %d", resp.StatusCode), true), nil
+	}
+
+	// Parse URL for readability
+	parsedURL, err := url.Parse(htmlURL)
+	if err != nil {
+		return toolError("failed to parse URL: "+err.Error(), false), nil
+	}
+
+	// Extract text using go-readability
+	article, err := readability.FromReader(resp.Body, parsedURL)
+	if err != nil {
+		return toolError("failed to extract content: "+err.Error(), true), nil
+	}
+
+	// Truncate to max_length
+	textContent := article.TextContent
+	truncated := false
+	if len(textContent) > params.MaxLength {
+		textContent = textContent[:params.MaxLength]
+		truncated = true
+	}
+
+	// Return result
+	result := ArxivTextResult{
+		ArxivID:     normalized,
+		TextContent: textContent,
+		Truncated:   truncated,
+	}
+	b, _ := json.Marshal(result)
+	return string(b), nil
+}
+
 // GitHub search result types
 type GitHubRepoResult struct {
 	Name        string   `json:"name"`
