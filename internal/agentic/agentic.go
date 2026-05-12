@@ -234,6 +234,11 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 			}
 		}
 
+		// Accumulate assistant text for partial results
+		if assistantText != "" {
+			l.partialResult += assistantText
+		}
+
 		assistantMsg := responseToAssistantParam(resp)
 		var toolResultMsg *anthropic.MessageParam
 		if len(toolResults) > 0 {
