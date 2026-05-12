@@ -462,38 +462,107 @@ func extractPdfText(pdfBytes []byte, maxLength int) (text string, pageCount int,
 		return "", 0, fmt.Errorf("PDF has zero pages")
 	}
 
-	// Extract text from all pages
+	// Extract text from all pages using row-based extraction for better spacing
 	var textBuilder strings.Builder
-	fonts := make(map[string]*pdf.Font) // Font cache for text extraction
 	for i := 1; i <= pageCount; i++ {
 		page := reader.Page(i)
 		if page.V.IsNull() {
 			continue
 		}
 
-		pageText, err := page.GetPlainText(fonts)
+		// Use GetTextByRow for better word spacing
+		rows, err := page.GetTextByRow()
 		if err != nil {
-			// Log but continue - partial extraction is acceptable
-			continue
-		}
-
-		// Check if we're approaching the limit
-		if textBuilder.Len()+len(pageText) > maxLength {
-			// Add partial page text to reach limit
-			remaining := maxLength - textBuilder.Len()
-			if remaining > 0 {
-				textBuilder.WriteString(pageText[:remaining])
+			// Fall back to GetPlainText if row extraction fails
+			fonts := make(map[string]*pdf.Font)
+			pageText, err2 := page.GetPlainText(fonts)
+			if err2 != nil {
+				// Log but continue - partial extraction is acceptable
+				continue
 			}
-			break
+			// Add spaces between words for GetPlainText fallback
+			pageText = addSpacesBetweenWords(pageText)
+
+			// Check if we're approaching the limit
+			if textBuilder.Len()+len(pageText) > maxLength {
+				remaining := maxLength - textBuilder.Len()
+				if remaining > 0 {
+					textBuilder.WriteString(pageText[:remaining])
+				}
+				break
+			}
+			textBuilder.WriteString(pageText)
+		} else {
+			// Process rows to extract text with proper spacing
+			for _, row := range rows {
+				for _, word := range row.Content {
+					wordText := word.S
+					if wordText == "" {
+						continue
+					}
+
+					// Check if we're approaching the limit
+					if textBuilder.Len()+len(wordText)+1 > maxLength {
+						remaining := maxLength - textBuilder.Len()
+						if remaining > 0 {
+							if remaining <= len(wordText) {
+								textBuilder.WriteString(wordText[:remaining])
+							} else {
+								textBuilder.WriteString(wordText)
+							}
+						}
+						return textBuilder.String(), pageCount, nil
+					}
+
+					// Add word with space
+					if textBuilder.Len() > 0 {
+						textBuilder.WriteString(" ")
+					}
+					textBuilder.WriteString(wordText)
+				}
+				// Add newline after each row
+				if textBuilder.Len() > 0 && textBuilder.String()[textBuilder.Len()-1] != '\n' {
+					textBuilder.WriteString("\n")
+				}
+			}
 		}
 
-		textBuilder.WriteString(pageText)
+		// Add page separator
 		if i < pageCount {
-			textBuilder.WriteString("\n\n") // Page separator
+			textBuilder.WriteString("\n")
 		}
 	}
 
 	return textBuilder.String(), pageCount, nil
+}
+
+// addSpacesBetweenWords attempts to add spaces between concatenated words
+// by detecting case transitions and common patterns
+func addSpacesBetweenWords(text string) string {
+	if text == "" {
+		return text
+	}
+
+	var result strings.Builder
+	result.Grow(len(text) * 2) // Pre-allocate more space for added spaces
+
+	runes := []rune(text)
+	for i := 0; i < len(runes); i++ {
+		result.WriteRune(runes[i])
+
+		// Add space between lowercase and uppercase (camelCase detection)
+		if i < len(runes)-1 {
+			current := runes[i]
+			next := runes[i+1]
+
+			// Add space if: lowercase followed by uppercase
+			if (current >= 'a' && current <= 'z') && (next >= 'A' && next <= 'Z') {
+				result.WriteRune(' ')
+			}
+		}
+	}
+
+	return result.String()
 }
 
 // assessExtractionQuality returns "good", "poor", or "failed" based on
