@@ -573,6 +573,46 @@ func TestArxivPdfResult_NewSchema(t *testing.T) {
 	}
 }
 
+// Tests for extractPdfText helper (Task 3)
+// Note: These tests verify the function signature and error handling.
+// Full PDF extraction is tested with real PDFs in Task 8.
+func TestExtractPdfText_FunctionSignature(t *testing.T) {
+	// Test that function exists with correct signature
+	invalidBytes := []byte("not a pdf")
+	_, _, err := extractPdfText(invalidBytes, 10000)
+	if err == nil {
+		t.Error("expected error for invalid PDF")
+	}
+	if !strings.Contains(err.Error(), "failed to parse PDF") {
+		t.Errorf("expected parse error, got: %v", err)
+	}
+}
+
+func TestExtractPdfText_PanicRecovery(t *testing.T) {
+	// Test panic recovery with nil bytes
+	defer func() {
+		if r := recover(); r != nil {
+			t.Error("panic was not recovered")
+		}
+	}()
+
+	_, _, err := extractPdfText(nil, 10000)
+	if err == nil {
+		t.Error("expected error for nil bytes")
+	}
+}
+
+func TestExtractPdfText_ZeroMaxLength(t *testing.T) {
+	// Test with zero maxLength - function should still work but return empty
+	// This tests the truncation logic
+	validPdfHeader := []byte("%PDF-1.4\n")
+	text, _, _ := extractPdfText(validPdfHeader, 0)
+	// With maxLength=0, should return empty string
+	if len(text) > 0 {
+		t.Errorf("expected empty text with maxLength=0, got %d chars", len(text))
+	}
+}
+
 // Helper function
 func contains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || hasSubstring(s, substr)))

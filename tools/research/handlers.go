@@ -1,6 +1,7 @@
 package research
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	readability "github.com/go-shiori/go-readability"
+	pdf "github.com/ledongthuc/pdf"
 	"golang.org/x/net/html"
 )
 
@@ -354,6 +356,64 @@ func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.Ra
 	}
 	b, _ := json.Marshal(result)
 	return string(b), nil
+}
+
+// extractPdfText extracts text from PDF bytes with panic recovery.
+// Returns text (truncated to maxLength), page count, and error.
+// maxLength must be > 0.
+func extractPdfText(pdfBytes []byte, maxLength int) (text string, pageCount int, err error) {
+	// Panic recovery for PDF library issues
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("PDF extraction panic: %v", r)
+			text = ""
+			pageCount = 0
+		}
+	}()
+
+	// Create PDF reader
+	reader, err := pdf.NewReader(bytes.NewReader(pdfBytes), int64(len(pdfBytes)))
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to parse PDF: %w", err)
+	}
+
+	pageCount = reader.NumPage()
+	if pageCount == 0 {
+		return "", 0, fmt.Errorf("PDF has zero pages")
+	}
+
+	// Extract text from all pages
+	var textBuilder strings.Builder
+	fonts := make(map[string]*pdf.Font) // Font cache for text extraction
+	for i := 1; i <= pageCount; i++ {
+		page := reader.Page(i)
+		if page.V.IsNull() {
+			continue
+		}
+
+		pageText, err := page.GetPlainText(fonts)
+		if err != nil {
+			// Log but continue - partial extraction is acceptable
+			continue
+		}
+
+		// Check if we're approaching the limit
+		if textBuilder.Len()+len(pageText) > maxLength {
+			// Add partial page text to reach limit
+			remaining := maxLength - textBuilder.Len()
+			if remaining > 0 {
+				textBuilder.WriteString(pageText[:remaining])
+			}
+			break
+		}
+
+		textBuilder.WriteString(pageText)
+		if i < pageCount {
+			textBuilder.WriteString("\n\n") // Page separator
+		}
+	}
+
+	return textBuilder.String(), pageCount, nil
 }
 
 func normalizeArxivID(id string) (normalized string, version string, err error) {
