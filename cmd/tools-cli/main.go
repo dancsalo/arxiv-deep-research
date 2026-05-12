@@ -65,7 +65,7 @@ Usage:
 Commands:
   search-arxiv <query> [--max-results=N] [--search-field=FIELD]
   search-openalex <query> [--max-results=N] [--filter=EXPR]
-  fetch-pdf <arxiv-id>
+  fetch-pdf <arxiv-id> [--max-length=N]
   search-github <query> [--max-results=N]
   search-web <query> [--max-results=N]
   get-citations <work-id> --direction=<references|cited_by> [--max-results=N]
@@ -81,6 +81,7 @@ Examples:
   tools-cli search-arxiv "neural networks" --search-field=abstract
   tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
   tools-cli fetch-pdf "1706.03762"
+  tools-cli fetch-pdf "2301.00001" --max-length=15000
   tools-cli search-github "diffusion models pytorch"
   tools-cli search-web "quantum computing tutorials"
   tools-cli get-citations W2741809807 --direction references --max-results 10

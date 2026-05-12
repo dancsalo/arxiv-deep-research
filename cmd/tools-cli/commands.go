@@ -104,19 +104,21 @@ func executeSearchOpenAlex(ctx context.Context, toolset *research.ResearchToolSe
 
 func executeFetchPdf(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
 	fs := flag.NewFlagSet("fetch-pdf", flag.ExitOnError)
+	maxLength := fs.Int("max-length", 8000, "maximum text content length in characters")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if fs.NArg() == 0 {
-		return fmt.Errorf("arxiv-id argument required\n\nUsage: tools-cli fetch-pdf <arxiv-id>\n\nExpected formats:\n  - 2301.00001 (new format)\n  - arXiv:2301.00001\n  - astro-ph/9901234 (old format)\n\nExample: tools-cli fetch-pdf \"1706.03762\"")
+		return fmt.Errorf("arxiv-id argument required\n\nUsage: tools-cli fetch-pdf <arxiv-id> [--max-length=N]\n\nExpected formats:\n  - 2301.00001 (new format)\n  - arXiv:2301.00001\n  - astro-ph/9901234 (old format)\n\nExamples:\n  tools-cli fetch-pdf \"1706.03762\"\n  tools-cli fetch-pdf \"2301.00001\" --max-length 15000")
 	}
 
 	arxivID := fs.Arg(0)
 
 	input := map[string]interface{}{
-		"arxiv_id": arxivID,
+		"arxiv_id":   arxivID,
+		"max_length": *maxLength,
 	}
 
 	inputJSON, err := json.Marshal(input)
