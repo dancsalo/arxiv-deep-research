@@ -477,6 +477,42 @@ func TestExtractPdfText_ZeroMaxLength(t *testing.T) {
 	}
 }
 
+// Tests for assessExtractionQuality helper (Task 4)
+func TestAssessExtractionQuality_Good(t *testing.T) {
+	quality := assessExtractionQuality(3000, 10, "") // 300 chars/page
+	if quality != "good" {
+		t.Errorf("expected 'good', got %q", quality)
+	}
+}
+
+func TestAssessExtractionQuality_Poor_LowDensity(t *testing.T) {
+	quality := assessExtractionQuality(500, 10, "") // 50 chars/page
+	if quality != "poor" {
+		t.Errorf("expected 'poor' for low density, got %q", quality)
+	}
+}
+
+func TestAssessExtractionQuality_Poor_LowTotal(t *testing.T) {
+	quality := assessExtractionQuality(800, 5, "") // 160 chars/page but <1000 total
+	if quality != "poor" {
+		t.Errorf("expected 'poor' for low total chars, got %q", quality)
+	}
+}
+
+func TestAssessExtractionQuality_Failed(t *testing.T) {
+	quality := assessExtractionQuality(0, 0, "extraction error")
+	if quality != "failed" {
+		t.Errorf("expected 'failed', got %q", quality)
+	}
+}
+
+func TestAssessExtractionQuality_FailedWithPartialText(t *testing.T) {
+	quality := assessExtractionQuality(500, 0, "some error")
+	if quality != "failed" {
+		t.Errorf("expected 'failed' when error present, got %q", quality)
+	}
+}
+
 // Helper function
 func contains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && (s == substr || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || hasSubstring(s, substr)))
