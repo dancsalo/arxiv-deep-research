@@ -205,13 +205,16 @@ func TestFetchArxivPdf_NotFound(t *testing.T) {
 		t.Fatalf("unexpected Go error: %v", err)
 	}
 
-	var errResp map[string]any
-	json.Unmarshal([]byte(result), &errResp)
-	if errResp["recoverable"] != true {
-		t.Error("expected recoverable error")
+	var parsed ArxivPdfResult
+	json.Unmarshal([]byte(result), &parsed)
+	if parsed.ExtractionQuality != "failed" {
+		t.Errorf("expected extraction_quality='failed', got %q", parsed.ExtractionQuality)
 	}
-	if errResp["error"] == nil {
-		t.Error("expected error message")
+	if parsed.Error == "" {
+		t.Error("expected error message to be set")
+	}
+	if !strings.Contains(parsed.Error, "404") {
+		t.Errorf("expected 404 in error, got: %s", parsed.Error)
 	}
 }
 
