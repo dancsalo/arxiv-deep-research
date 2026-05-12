@@ -126,7 +126,7 @@ func executeFetchPdf(ctx context.Context, toolset *research.ResearchToolSet, arg
 		return fmt.Errorf("failed to marshal input: %w", err)
 	}
 
-	result, err := callToolHandler(ctx, toolset, "fetch_arxiv_pdf", inputJSON)
+	result, err := callToolHandler(ctx, toolset, "fetch_arxiv_text", inputJSON)
 	if err != nil {
 		return err
 	}
