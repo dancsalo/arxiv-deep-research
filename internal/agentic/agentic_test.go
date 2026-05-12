@@ -805,6 +805,57 @@ func TestPartialResultAccumulation(t *testing.T) {
 	}
 }
 
+func TestPartialResultOnCostLimitError(t *testing.T) {
+	client := &scriptedMessageClient{
+		responses: []*anthropic.Message{
+			{
+				Content:    []anthropic.ContentBlockUnion{{Type: "text", Text: "Some research findings before hitting cost limit"}},
+				StopReason: "tool_use",
+				Usage:      anthropic.Usage{InputTokens: 100000, OutputTokens: 100000},
+			},
+		},
+	}
+
+	loop := newBasicAgenticLoop(client, nil, nil)
+	loop.cfg.MaxCostUSD = 0.001
+
+	result, err := loop.Run(bgctx(), "test")
+
+	if err == nil {
+		t.Fatal("expected cost limit error")
+	}
+	if !contains(err.Error(), "cost limit") {
+		t.Errorf("expected cost limit error, got: %v", err)
+	}
+
+	expected := "Some research findings before hitting cost limit"
+	if result != expected {
+		t.Errorf("result = %q, want %q", result, expected)
+	}
+}
+
+func TestFinishResultTakesPrecedenceOverPartialResult(t *testing.T) {
+	client := &scriptedMessageClient{
+		responses: []*anthropic.Message{
+			makeTextResponse("Some preliminary research"),
+			makeToolUseResponse("finish", "call1", json.RawMessage(`{"summary":"Final polished summary"}`)),
+		},
+	}
+
+	loop := newBasicAgenticLoop(client, nil, nil)
+	result, err := loop.Run(bgctx(), "test")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should return finishResult, not partialResult
+	expected := "Final polished summary"
+	if result != expected {
+		t.Errorf("result = %q, want %q (finishResult should take precedence)", result, expected)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
 }
