@@ -77,7 +77,7 @@ func newResearchToolSetWithBase(client httpClient, baseURL string) *ResearchTool
 func (r *ResearchToolSet) Register(reg *registry.ToolRegistry) {
 	reg.Register("search_arxiv", BuildSearchArxivTool(), r.handleSearchArxiv)
 	reg.Register("search_openalex", BuildSearchOpenAlexTool(), r.handleSearchOpenAlex)
-	reg.Register("fetch_arxiv_pdf", BuildFetchArxivPdfTool(), r.handleFetchArxivPdf)
+	reg.Register("fetch_arxiv_text", BuildFetchArxivTextTool(), r.handleFetchArxivText)
 	reg.Register("search_github_repos", BuildSearchGithubTool(), r.handleSearchGithub)
 	reg.Register("search_web", BuildSearchWebTool(), r.handleSearchWeb)
 	reg.Register("get_citations_and_references", BuildGetCitationsAndReferencesTool(), r.handleGetCitationsAndReferences)

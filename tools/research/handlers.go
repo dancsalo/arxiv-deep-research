@@ -1,7 +1,6 @@
 package research
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	readability "github.com/go-shiori/go-readability"
-	pdf "github.com/ledongthuc/pdf"
 	"golang.org/x/net/html"
 )
 
@@ -305,248 +303,9 @@ type ArxivPdfResult struct {
 	Error             string `json:"error,omitempty"`
 }
 
-func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.RawMessage) (string, error) {
-	// Parse and validate input
-	var params struct {
-		ArxivID   string `json:"arxiv_id"`
-		MaxLength int    `json:"max_length"`
-	}
-	if err := json.Unmarshal(input, &params); err != nil {
-		return toolError("invalid input: "+err.Error(), false), nil
-	}
-	if params.ArxivID == "" {
-		return toolError("arxiv_id is required", false), nil
-	}
-	if params.MaxLength == 0 {
-		params.MaxLength = 8000 // Default
-	}
-	if params.MaxLength > 50000 {
-		params.MaxLength = 50000 // Max limit
-	}
 
-	// Normalize and validate arXiv ID
-	normalized, version, err := normalizeArxivID(params.ArxivID)
-	if err != nil {
-		return toolError("invalid arXiv ID format: "+err.Error(), false), nil
-	}
 
-	// Construct PDF URL
-	pdfURL := fmt.Sprintf("https://export.arxiv.org/pdf/%s.pdf", normalized)
 
-	// Rate limit: max 3 requests per second per arXiv TOS
-	r.arxivRateLimiter.Wait()
-
-	// Download PDF
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pdfURL, nil)
-	if err != nil {
-		result := ArxivPdfResult{
-			ArxivID:           normalized,
-			TextContent:       "",
-			PageCount:         0,
-			CharCount:         0,
-			ExtractionQuality: "failed",
-			Truncated:         false,
-			Version:           version,
-			Error:             fmt.Sprintf("failed to create request: %v", err),
-		}
-		b, _ := json.Marshal(result)
-		return string(b), nil
-	}
-
-	resp, err := r.client.Do(req)
-	if err != nil {
-		result := ArxivPdfResult{
-			ArxivID:           normalized,
-			TextContent:       "",
-			PageCount:         0,
-			CharCount:         0,
-			ExtractionQuality: "failed",
-			Truncated:         false,
-			Version:           version,
-			Error:             fmt.Sprintf("PDF download failed: %v", err),
-		}
-		b, _ := json.Marshal(result)
-		return string(b), nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		recoverable := resp.StatusCode >= 500 // 5xx errors are recoverable
-		result := ArxivPdfResult{
-			ArxivID:           normalized,
-			TextContent:       "",
-			PageCount:         0,
-			CharCount:         0,
-			ExtractionQuality: "failed",
-			Truncated:         false,
-			Version:           version,
-			Error:             fmt.Sprintf("PDF download failed: HTTP %d", resp.StatusCode),
-		}
-		b, _ := json.Marshal(result)
-		if recoverable {
-			return toolError(result.Error, true), nil
-		}
-		return string(b), nil
-	}
-
-	// Read PDF bytes
-	pdfBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		result := ArxivPdfResult{
-			ArxivID:           normalized,
-			TextContent:       "",
-			PageCount:         0,
-			CharCount:         0,
-			ExtractionQuality: "failed",
-			Truncated:         false,
-			Version:           version,
-			Error:             fmt.Sprintf("failed to read PDF: %v", err),
-		}
-		b, _ := json.Marshal(result)
-		return string(b), nil
-	}
-
-	// Extract text
-	textContent, pageCount, extractErr := extractPdfText(pdfBytes, params.MaxLength)
-
-	// Calculate metrics
-	charCount := len(textContent)
-	truncated := false
-	if extractErr == nil && charCount >= params.MaxLength {
-		truncated = true
-	}
-
-	// Assess quality
-	errorMsg := ""
-	if extractErr != nil {
-		errorMsg = extractErr.Error()
-	}
-	quality := assessExtractionQuality(charCount, pageCount, errorMsg)
-
-	// Return result
-	result := ArxivPdfResult{
-		ArxivID:           normalized,
-		TextContent:       textContent,
-		PageCount:         pageCount,
-		CharCount:         charCount,
-		ExtractionQuality: quality,
-		Truncated:         truncated,
-		Version:           version,
-		Error:             errorMsg,
-	}
-	b, _ := json.Marshal(result)
-	return string(b), nil
-}
-
-// extractPdfText extracts text from PDF bytes with panic recovery.
-// Returns text (truncated to maxLength), page count, and error.
-// maxLength must be > 0.
-func extractPdfText(pdfBytes []byte, maxLength int) (text string, pageCount int, err error) {
-	// Panic recovery for PDF library issues
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("PDF extraction panic: %v", r)
-			text = ""
-			pageCount = 0
-		}
-	}()
-
-	// Create PDF reader
-	reader, err := pdf.NewReader(bytes.NewReader(pdfBytes), int64(len(pdfBytes)))
-	if err != nil {
-		return "", 0, fmt.Errorf("failed to parse PDF: %w", err)
-	}
-
-	pageCount = reader.NumPage()
-	if pageCount == 0 {
-		return "", 0, fmt.Errorf("PDF has zero pages")
-	}
-
-	// Extract text from all pages
-	var textBuilder strings.Builder
-	for i := 1; i <= pageCount; i++ {
-		page := reader.Page(i)
-		if page.V.IsNull() {
-			continue
-		}
-
-		// Extract plain text
-		pageText, err := page.GetPlainText(nil)
-		if err != nil {
-			// Log but continue - partial extraction is acceptable
-			continue
-		}
-
-		// Check if we're approaching the limit
-		if textBuilder.Len()+len(pageText) > maxLength {
-			remaining := maxLength - textBuilder.Len()
-			if remaining > 0 {
-				textBuilder.WriteString(pageText[:remaining])
-			}
-			break
-		}
-
-		textBuilder.WriteString(pageText)
-
-		// Add page separator
-		if i < pageCount {
-			textBuilder.WriteString("\n\n")
-		}
-	}
-
-	// Post-process to fix common spacing issues
-	finalText := fixPdfSpacing(textBuilder.String())
-
-	// Truncate after fixing if needed
-	if len(finalText) > maxLength {
-		finalText = finalText[:maxLength]
-	}
-
-	return finalText, pageCount, nil
-}
-
-// fixPdfSpacing adds spaces where they're missing in PDF extraction.
-// Common patterns: lowercase-uppercase transitions, end of sentence, etc.
-func fixPdfSpacing(text string) string {
-	// Add space between lowercase and uppercase (e.g., "wordAnother" -> "word Another")
-	re1 := regexp.MustCompile(`([a-z])([A-Z])`)
-	text = re1.ReplaceAllString(text, "$1 $2")
-
-	// Add space after period/comma/colon if followed immediately by letter
-	re2 := regexp.MustCompile(`([.,;:!?])([A-Za-z])`)
-	text = re2.ReplaceAllString(text, "$1 $2")
-
-	// Add space between digit and letter (e.g., "2020The" -> "2020 The")
-	re3 := regexp.MustCompile(`(\d)([A-Za-z])`)
-	text = re3.ReplaceAllString(text, "$1 $2")
-
-	// Add space between letter and digit at word boundaries (e.g., "Section2" -> "Section 2")
-	re4 := regexp.MustCompile(`([a-z])(\d)`)
-	text = re4.ReplaceAllString(text, "$1 $2")
-
-	return text
-}
-
-// assessExtractionQuality returns "good", "poor", or "failed" based on
-// extraction results. charCount is before truncation, errorMsg is empty on success.
-func assessExtractionQuality(charCount, pageCount int, errorMsg string) string {
-	if errorMsg != "" || pageCount == 0 {
-		return "failed"
-	}
-
-	// Calculate text density (chars per page)
-	density := 0
-	if pageCount > 0 {
-		density = charCount / pageCount
-	}
-
-	// Good: high density and sufficient text
-	if density > 100 && charCount > 1000 {
-		return "good"
-	}
-
-	return "poor"
-}
 
 func normalizeArxivID(id string) (normalized string, version string, err error) {
 	// Strip common prefixes and whitespace
@@ -574,6 +333,107 @@ func normalizeArxivID(id string) (normalized string, version string, err error) 
 	}
 
 	return id, version, nil
+}
+
+func (r *ResearchToolSet) handleFetchArxivText(ctx context.Context, input json.RawMessage) (string, error) {
+	// Parse and validate input
+	var params struct {
+		ArxivID   string `json:"arxiv_id"`
+		MaxLength int    `json:"max_length"`
+	}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return toolError("invalid input: "+err.Error(), false), nil
+	}
+
+	// Validate arxiv_id required
+	if params.ArxivID == "" {
+		return toolError("arxiv_id is required", false), nil
+	}
+
+	// Apply max_length constraints (default 25000, max 25000)
+	if params.MaxLength <= 0 {
+		params.MaxLength = 25000
+	}
+	if params.MaxLength > 25000 {
+		params.MaxLength = 25000
+	}
+
+	// Normalize arXiv ID (reuse existing function)
+	normalized, _, err := normalizeArxivID(params.ArxivID)
+	if err != nil {
+		return toolError("invalid arXiv ID format: "+err.Error(), false), nil
+	}
+
+	// Construct HTML URL
+	htmlURL := fmt.Sprintf("https://arxiv.org/html/%s", normalized)
+
+	// Rate limit (reuse existing rate limiter)
+	r.arxivRateLimiter.Wait()
+
+	// Fetch HTML
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, htmlURL, nil)
+	if err != nil {
+		return toolError("failed to create request: "+err.Error(), false), nil
+	}
+
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return toolError("request failed: "+err.Error(), true), nil
+	}
+	defer resp.Body.Close()
+
+	// Check HTML availability
+	if resp.StatusCode == http.StatusNotFound {
+		result := ArxivTextResult{
+			ArxivID:     normalized,
+			TextContent: "",
+			Truncated:   false,
+			Error:       "HTML version not available for this paper",
+		}
+		b, err := json.Marshal(result)
+		if err != nil {
+			return toolError("failed to marshal result: "+err.Error(), false), nil
+		}
+		return string(b), nil
+	}
+
+	// Handle other error status codes
+	if resp.StatusCode != http.StatusOK {
+		return toolError(fmt.Sprintf("arXiv returned status %d", resp.StatusCode), true), nil
+	}
+
+	// Parse URL for readability
+	parsedURL, err := url.Parse(htmlURL)
+	if err != nil {
+		return toolError("failed to parse URL: "+err.Error(), false), nil
+	}
+
+	// Extract text using go-readability
+	article, err := readability.FromReader(resp.Body, parsedURL)
+	if err != nil {
+		return toolError("failed to extract content: "+err.Error(), true), nil
+	}
+
+	// Truncate to max_length
+	textContent := article.TextContent
+	truncated := false
+	if len([]rune(textContent)) > params.MaxLength {
+		runes := []rune(textContent)
+		textContent = string(runes[:params.MaxLength])
+		truncated = true
+	}
+
+	// Return result
+	result := ArxivTextResult{
+		ArxivID:     normalized,
+		TextContent: textContent,
+		Truncated:   truncated,
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		return toolError("failed to marshal result: "+err.Error(), false), nil
+	}
+	return string(b), nil
 }
 
 // GitHub search result types
