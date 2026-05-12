@@ -65,31 +65,6 @@ func BuildSearchOpenAlexTool() anthropic.ToolUnionParam {
 	return t
 }
 
-func BuildFetchArxivPdfTool() anthropic.ToolUnionParam {
-	t := anthropic.ToolUnionParamOfTool(
-		anthropic.ToolInputSchemaParam{
-			Type: "object",
-			Properties: map[string]any{
-				"arxiv_id": map[string]any{
-					"type":        "string",
-					"description": "arXiv identifier. Formats: 2301.00001, arXiv:2301.00001, 2301.00001v2 (new), or astro-ph/9901234 (old)",
-				},
-				"max_length": map[string]any{
-					"type":        "integer",
-					"description": "Maximum text content length in characters (default 8000, max 50000)",
-					"default":     8000,
-				},
-			},
-			Required: []string{"arxiv_id"},
-		},
-		"fetch_arxiv_pdf",
-	)
-	t.OfTool.Description = anthropic.String(
-		"Fetches and extracts text content from an arXiv preprint PDF. Returns extracted text with quality indicators (page count, character count, extraction quality). Text is truncated to max_length (default 8000, max 50000 characters). Extraction quality may be 'good' (reliable text extraction), 'poor' (low text density, likely image-based), or 'failed' (extraction error). Rate limit: 1 request per 3 seconds per arXiv TOS.",
-	)
-	return t
-}
-
 func BuildSearchGithubTool() anthropic.ToolUnionParam {
 	t := anthropic.ToolUnionParamOfTool(
 		anthropic.ToolInputSchemaParam{

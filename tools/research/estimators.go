@@ -17,24 +17,6 @@ func ResearchToolEstimators() map[string]func(args map[string]any) int {
 			// Increased from 350 to 360 per result to account for citation count field (~10 tokens per result)
 			return 50 + n*360
 		},
-		"fetch_arxiv_pdf": func(args map[string]any) int {
-			// Base response overhead (metadata fields)
-			base := 200
-
-			// Estimate text content tokens based on max_length
-			maxLength := 8000 // default
-			if ml, ok := args["max_length"].(float64); ok && ml > 0 {
-				maxLength = int(ml)
-			}
-			if maxLength > 50000 {
-				maxLength = 50000
-			}
-
-			// Rough estimate: 1 token per 4 characters
-			textTokens := maxLength / 4
-
-			return base + textTokens
-		},
 		"fetch_arxiv_text": func(args map[string]any) int {
 			maxLength := 25000
 			if ml, ok := args["max_length"].(float64); ok && ml > 0 {

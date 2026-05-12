@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -84,7 +85,7 @@ func TestFetchArxivText_Success(t *testing.T) {
 	}
 
 	// Verify content extraction worked
-	if !contains(parsed.TextContent, "novel approach") || !contains(parsed.TextContent, "significant improvements") {
+	if !strings.Contains(parsed.TextContent, "novel approach") || !strings.Contains(parsed.TextContent, "significant improvements") {
 		t.Errorf("text_content missing expected keywords: %s", parsed.TextContent)
 	}
 }
