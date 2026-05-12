@@ -308,13 +308,20 @@ type ArxivPdfResult struct {
 func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.RawMessage) (string, error) {
 	// Parse and validate input
 	var params struct {
-		ArxivID string `json:"arxiv_id"`
+		ArxivID   string `json:"arxiv_id"`
+		MaxLength int    `json:"max_length"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return toolError("invalid input: "+err.Error(), false), nil
 	}
 	if params.ArxivID == "" {
 		return toolError("arxiv_id is required", false), nil
+	}
+	if params.MaxLength == 0 {
+		params.MaxLength = 8000 // Default
+	}
+	if params.MaxLength > 50000 {
+		params.MaxLength = 50000 // Max limit
 	}
 
 	// Normalize and validate arXiv ID
@@ -329,30 +336,103 @@ func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.Ra
 	// Rate limit: max 3 requests per second per arXiv TOS
 	r.arxivRateLimiter.Wait()
 
-	// Validate URL (HEAD request to check existence)
-	// Convert httpClient interface to *http.Client for validateArxivPdf
-	// validateArxivPdf needs *http.Client to access Transport field
-	var concreteClient *http.Client
-	if c, ok := r.client.(*http.Client); ok {
-		concreteClient = c
-	} else {
-		// For test mocks without Transport, create a default client
-		concreteClient = &http.Client{Timeout: 10 * time.Second}
-	}
-	if err := validateArxivPdf(ctx, concreteClient, pdfURL); err != nil {
-		return toolError("PDF not found: "+err.Error(), true), nil
+	// Download PDF
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pdfURL, nil)
+	if err != nil {
+		result := ArxivPdfResult{
+			ArxivID:           normalized,
+			TextContent:       "",
+			PageCount:         0,
+			CharCount:         0,
+			ExtractionQuality: "failed",
+			Truncated:         false,
+			Version:           version,
+			Error:             fmt.Sprintf("failed to create request: %v", err),
+		}
+		b, _ := json.Marshal(result)
+		return string(b), nil
 	}
 
-	// Return result (placeholder - will be updated in Task 5)
+	resp, err := r.client.Do(req)
+	if err != nil {
+		result := ArxivPdfResult{
+			ArxivID:           normalized,
+			TextContent:       "",
+			PageCount:         0,
+			CharCount:         0,
+			ExtractionQuality: "failed",
+			Truncated:         false,
+			Version:           version,
+			Error:             fmt.Sprintf("PDF download failed: %v", err),
+		}
+		b, _ := json.Marshal(result)
+		return string(b), nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		recoverable := resp.StatusCode >= 500 // 5xx errors are recoverable
+		result := ArxivPdfResult{
+			ArxivID:           normalized,
+			TextContent:       "",
+			PageCount:         0,
+			CharCount:         0,
+			ExtractionQuality: "failed",
+			Truncated:         false,
+			Version:           version,
+			Error:             fmt.Sprintf("PDF download failed: HTTP %d", resp.StatusCode),
+		}
+		b, _ := json.Marshal(result)
+		if recoverable {
+			return toolError(result.Error, true), nil
+		}
+		return string(b), nil
+	}
+
+	// Read PDF bytes
+	pdfBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		result := ArxivPdfResult{
+			ArxivID:           normalized,
+			TextContent:       "",
+			PageCount:         0,
+			CharCount:         0,
+			ExtractionQuality: "failed",
+			Truncated:         false,
+			Version:           version,
+			Error:             fmt.Sprintf("failed to read PDF: %v", err),
+		}
+		b, _ := json.Marshal(result)
+		return string(b), nil
+	}
+
+	// Extract text
+	textContent, pageCount, extractErr := extractPdfText(pdfBytes, params.MaxLength)
+
+	// Calculate metrics
+	charCount := len(textContent)
+	truncated := false
+	if extractErr == nil && charCount >= params.MaxLength {
+		truncated = true
+	}
+
+	// Assess quality
+	errorMsg := ""
+	if extractErr != nil {
+		errorMsg = extractErr.Error()
+	}
+	quality := assessExtractionQuality(charCount, pageCount, errorMsg)
+
+	// Return result
 	result := ArxivPdfResult{
 		ArxivID:           normalized,
-		TextContent:       "", // Will be populated in Task 5
-		PageCount:         0,
-		CharCount:         0,
-		ExtractionQuality: "failed", // Temporary placeholder
-		Truncated:         false,
+		TextContent:       textContent,
+		PageCount:         pageCount,
+		CharCount:         charCount,
+		ExtractionQuality: quality,
+		Truncated:         truncated,
 		Version:           version,
-		Error:             "extraction not yet implemented",
+		Error:             errorMsg,
 	}
 	b, _ := json.Marshal(result)
 	return string(b), nil
@@ -463,49 +543,6 @@ func normalizeArxivID(id string) (normalized string, version string, err error) 
 	}
 
 	return id, version, nil
-}
-
-func validateArxivPdf(ctx context.Context, client *http.Client, pdfURL string) error {
-	// Configure client with timeout and redirect checking
-	// Use the provided client's transport but add our own CheckRedirect
-	clientWithRedirectCheck := &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: client.Transport, // Use provided transport (important for tests)
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			// Validate redirect target is still arxiv.org domain
-			if !strings.Contains(req.URL.Host, "arxiv.org") {
-				return fmt.Errorf("suspicious redirect to: %s", req.URL.String())
-			}
-			// Allow up to 3 redirects
-			if len(via) >= 3 {
-				return fmt.Errorf("too many redirects")
-			}
-			return nil
-		},
-	}
-
-	// Send HEAD request with timeout
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	req, _ := http.NewRequestWithContext(ctx, http.MethodHead, pdfURL, nil)
-	req.Header.Set("User-Agent", "arxiv-deep-research/1.0")
-
-	resp, err := clientWithRedirectCheck.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Check final status after following redirects
-	if resp.StatusCode != 200 && resp.StatusCode != 301 && resp.StatusCode != 302 {
-		if resp.StatusCode == 404 {
-			return fmt.Errorf("paper not found")
-		}
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-
-	return nil
 }
 
 // GitHub search result types
