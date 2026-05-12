@@ -92,14 +92,6 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 			"input_tokens", resp.Usage.InputTokens, "output_tokens", resp.Usage.OutputTokens,
 			"cost_usd", cost)
 
-		// Extract and accumulate any text from this response before error checks
-		// so that partial results are available if we hit limits
-		for _, block := range resp.Content {
-			if block.Type == "text" {
-				l.partialResult += block.Text
-			}
-		}
-
 		if ctx.Err() != nil {
 			l.logger.Info("loop.cancelled", "turn", l.turnIndex, "reason", ctx.Err())
 			return l.partialResult, ctx.Err()
@@ -240,6 +232,11 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 
 				toolCalls = append(toolCalls, toolName)
 			}
+		}
+
+		// Accumulate assistant text for partial results
+		if assistantText != "" {
+			l.partialResult += assistantText
 		}
 
 		assistantMsg := responseToAssistantParam(resp)
