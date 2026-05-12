@@ -132,9 +132,10 @@ func TestFetchArxivPdf_Success(t *testing.T) {
 	if parsed.ArxivID != "2301.00001" {
 		t.Errorf("expected arxiv_id='2301.00001', got %q", parsed.ArxivID)
 	}
-	if parsed.PdfURL != "https://export.arxiv.org/pdf/2301.00001.pdf" {
-		t.Errorf("unexpected pdf_url: %q", parsed.PdfURL)
-	}
+	// TODO: Update in Task 5 - PdfURL removed, replaced with TextContent
+	// if parsed.PdfURL != "https://export.arxiv.org/pdf/2301.00001.pdf" {
+	// 	t.Errorf("unexpected pdf_url: %q", parsed.PdfURL)
+	// }
 	if parsed.Version != "" {
 		t.Errorf("expected version='', got %q", parsed.Version)
 	}
@@ -163,10 +164,10 @@ func TestFetchArxivPdf_WithRedirect(t *testing.T) {
 	if parsed.ArxivID != "2301.00001" {
 		t.Errorf("expected arxiv_id='2301.00001', got %q, full result: %s", parsed.ArxivID, result)
 	}
-	// Verify URL is constructed correctly
-	if parsed.PdfURL != "https://export.arxiv.org/pdf/2301.00001.pdf" {
-		t.Errorf("unexpected pdf_url: %q", parsed.PdfURL)
-	}
+	// TODO: Update in Task 5 - PdfURL removed, replaced with TextContent
+	// if parsed.PdfURL != "https://export.arxiv.org/pdf/2301.00001.pdf" {
+	// 	t.Errorf("unexpected pdf_url: %q", parsed.PdfURL)
+	// }
 }
 
 func TestFetchArxivPdf_OldFormatId(t *testing.T) {
@@ -184,9 +185,10 @@ func TestFetchArxivPdf_OldFormatId(t *testing.T) {
 
 	var parsed ArxivPdfResult
 	json.Unmarshal([]byte(result), &parsed)
-	if parsed.PdfURL != "https://export.arxiv.org/pdf/astro-ph/9901234.pdf" {
-		t.Errorf("unexpected pdf_url: %q", parsed.PdfURL)
-	}
+	// TODO: Update in Task 5 - PdfURL removed, replaced with TextContent
+	// if parsed.PdfURL != "https://export.arxiv.org/pdf/astro-ph/9901234.pdf" {
+	// 	t.Errorf("unexpected pdf_url: %q", parsed.PdfURL)
+	// }
 }
 
 func TestFetchArxivPdf_NotFound(t *testing.T) {
@@ -398,6 +400,39 @@ func TestArxivPdfEstimator(t *testing.T) {
 	got := estimators["fetch_arxiv_pdf"](map[string]any{"arxiv_id": "2301.00001"})
 	if got != 100 {
 		t.Errorf("fetch_arxiv_pdf estimator: got %d, want 100", got)
+	}
+}
+
+// Test for new ArxivPdfResult schema (Task 2)
+func TestArxivPdfResult_NewSchema(t *testing.T) {
+	result := ArxivPdfResult{
+		ArxivID:           "1706.03762",
+		TextContent:       "Sample text content",
+		PageCount:         15,
+		CharCount:         1500,
+		ExtractionQuality: "good",
+		Truncated:         false,
+		Version:           "v1",
+	}
+
+	b, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(b, &parsed); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
+
+	if parsed["text_content"] != "Sample text content" {
+		t.Errorf("expected text_content field, got: %v", parsed)
+	}
+	if parsed["page_count"].(float64) != 15 {
+		t.Errorf("expected page_count=15, got: %v", parsed["page_count"])
+	}
+	if parsed["extraction_quality"] != "good" {
+		t.Errorf("expected extraction_quality=good, got: %v", parsed["extraction_quality"])
 	}
 }
 

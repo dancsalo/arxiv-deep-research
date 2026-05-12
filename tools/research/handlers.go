@@ -293,9 +293,14 @@ func reconstructAbstract(index map[string][]int) string {
 }
 
 type ArxivPdfResult struct {
-	ArxivID string `json:"arxiv_id"`
-	PdfURL  string `json:"pdf_url"`
-	Version string `json:"version,omitempty"`
+	ArxivID           string `json:"arxiv_id"`
+	TextContent       string `json:"text_content"`
+	PageCount         int    `json:"page_count"`
+	CharCount         int    `json:"char_count"`
+	ExtractionQuality string `json:"extraction_quality"`
+	Truncated         bool   `json:"truncated"`
+	Version           string `json:"version,omitempty"`
+	Error             string `json:"error,omitempty"`
 }
 
 func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.RawMessage) (string, error) {
@@ -336,11 +341,16 @@ func (r *ResearchToolSet) handleFetchArxivPdf(ctx context.Context, input json.Ra
 		return toolError("PDF not found: "+err.Error(), true), nil
 	}
 
-	// Return result
+	// Return result (placeholder - will be updated in Task 5)
 	result := ArxivPdfResult{
-		ArxivID: normalized,
-		PdfURL:  pdfURL,
-		Version: version,
+		ArxivID:           normalized,
+		TextContent:       "", // Will be populated in Task 5
+		PageCount:         0,
+		CharCount:         0,
+		ExtractionQuality: "failed", // Temporary placeholder
+		Truncated:         false,
+		Version:           version,
+		Error:             "extraction not yet implemented",
 	}
 	b, _ := json.Marshal(result)
 	return string(b), nil
