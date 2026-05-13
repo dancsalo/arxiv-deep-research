@@ -387,3 +387,80 @@ func TestGenerateHTML_Integration(t *testing.T) {
 		})
 	}
 }
+
+func TestEndToEnd_FullWorkflow(t *testing.T) {
+	// Test complete workflow: load → detect → generate → verify
+
+	tracePath := filepath.Join("testdata", "fixtures", "normal-trace.json")
+	outputPath := filepath.Join(t.TempDir(), "e2e-timeline.html")
+
+	// Load trace
+	trace, err := LoadTrace(tracePath)
+	if err != nil {
+		t.Fatalf("LoadTrace failed: %v", err)
+	}
+
+	// Detect features
+	features := DetectSchemaFeatures(trace)
+
+	// Generate HTML
+	err = GenerateHTML(trace, features, outputPath)
+	if err != nil {
+		t.Fatalf("GenerateHTML failed: %v", err)
+	}
+
+	// Verify output
+	content, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("failed to read output: %v", err)
+	}
+
+	html := string(content)
+
+	// Check structure
+	requiredElements := []string{
+		"<!DOCTYPE html>",
+		"Trace Timeline",
+		"normal-session-456",
+		"Find recent papers on transformer architectures",
+		`id="timeline"`,
+		`id="trace-data"`,
+		"renderTimeline",
+		"toggleTurn",
+		"renderEventNode",
+	}
+
+	for _, elem := range requiredElements {
+		if !strings.Contains(html, elem) {
+			t.Errorf("missing required element: %s", elem)
+		}
+	}
+
+	// Verify embedded trace data is valid JSON
+	start := strings.Index(html, `<script type="application/json" id="trace-data">`)
+	if start == -1 {
+		t.Fatal("could not find embedded trace data start tag")
+	}
+
+	jsonStart := start + len(`<script type="application/json" id="trace-data">`)
+	end := strings.Index(html[jsonStart:], `</script>`)
+	if end == -1 {
+		t.Fatal("could not find embedded trace data end tag")
+	}
+
+	embeddedJSON := html[jsonStart : jsonStart+end]
+
+	var embeddedTrace tracing.Trace
+	if err := json.Unmarshal([]byte(embeddedJSON), &embeddedTrace); err != nil {
+		t.Fatalf("embedded trace data is not valid JSON: %v", err)
+	}
+
+	// Verify trace data integrity
+	if embeddedTrace.SessionID != trace.SessionID {
+		t.Error("session ID mismatch in embedded data")
+	}
+
+	if len(embeddedTrace.Turns) != len(trace.Turns) {
+		t.Error("turn count mismatch in embedded data")
+	}
+}
