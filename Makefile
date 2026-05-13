@@ -1,4 +1,4 @@
-.PHONY: build build-research build-tools vet lint test test-go test-race check run trace-list trace-show trace-errors help
+.PHONY: build build-research build-tools build-viewer vet lint test test-go test-race check run trace-list trace-show trace-view trace-errors help
 
 help: ## Show this help
 	@echo "arXiv Deep Research - Research Agent"
@@ -11,6 +11,7 @@ help: ## Show this help
 	@echo "Build commands:"
 	@echo "  make build-research   Build research-demo binary"
 	@echo "  make build-tools      Build tools-cli binary"
+	@echo "  make build-viewer     Build trace-viewer binary"
 	@echo ""
 	@echo "Test commands:"
 	@echo "  make test             Run all tests"
@@ -19,6 +20,7 @@ help: ## Show this help
 	@echo "Trace commands:"
 	@echo "  make trace-list       List recent trace files"
 	@echo "  make trace-show       Show trace: make trace-show RUN=<session_id>"
+	@echo "  make trace-view       View most recent trace in browser"
 	@echo "  make trace-errors     Show failed traces"
 
 build: build-research build-tools ## Build all binaries
@@ -28,6 +30,9 @@ build-research: ## Build research-demo binary
 
 build-tools: ## Build tools-cli binary
 	go build -o tools-cli ./cmd/tools-cli
+
+build-viewer: ## Build trace-viewer binary
+	go build -o trace-viewer ./cmd/trace-viewer
 
 vet:
 	go vet ./...
@@ -55,6 +60,15 @@ trace-list: ## List recent traces
 
 trace-show: ## Show a trace: make trace-show RUN=<session_id>
 	@jq . $(TRACE_DIR)/$(RUN).json
+
+trace-view: build-viewer ## View most recent trace in browser
+	@LATEST=$$(ls -t $(TRACE_DIR)/*.json 2>/dev/null | head -1); \
+	if [ -z "$$LATEST" ]; then \
+		echo "No traces found in $(TRACE_DIR)/"; \
+		exit 1; \
+	fi; \
+	echo "Opening $$LATEST in browser..."; \
+	./trace-viewer --open "$$LATEST"
 
 trace-errors: ## Show failed traces
 	@find $(TRACE_DIR) -name '*.json' -print0 2>/dev/null | xargs -0 jq -r 'select(.status=="error") | [.session_id, .error[0:60]] | join("\t")' 2>/dev/null || echo "No errors"

@@ -108,6 +108,27 @@ make trace-errors
 
 Prompt files are in `cmd/research-demo/prompts/variant-{a,b,c,d}.txt` and can be customized.
 
+## Trace Visualization
+
+Generate an interactive timeline for a single trace:
+
+```bash
+make trace-view
+```
+
+This opens a browser with the timeline for the most recent trace. The timeline shows:
+- **Turn nodes**: Click to expand and see LLM calls, tool executions, metrics
+- **Event nodes**: Compaction and guardrail decisions shown inline
+- **Multiple expansions**: Compare turns by expanding several at once
+
+Manual usage:
+
+```bash
+./trace-viewer --trace=.traces/session-001.json --open
+```
+
+See [`cmd/trace-viewer/README.md`](cmd/trace-viewer/README.md) for details.
+
 ## Testing Individual Tools
 
 The `tools-cli` binary lets you test research tools independently:

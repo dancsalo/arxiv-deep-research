@@ -4,7 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -51,18 +54,50 @@ func run() error {
 		log.Printf("Loaded trace: session_id=%s, turns=%d\n", trace.SessionID, len(trace.Turns))
 	}
 
-	// TODO: Generate HTML visualization
+	// Detect schema features
+	features := DetectSchemaFeatures(trace)
+
 	if *verbose {
-		log.Printf("Would generate HTML to: %s\n", output)
+		log.Printf("Generating HTML to: %s\n", output)
 	}
 
-	// TODO: Open in browser if requested
+	// Generate HTML visualization
+	if err := GenerateHTML(trace, features, output); err != nil {
+		return fmt.Errorf("generate HTML: %w", err)
+	}
+
+	fmt.Printf("Timeline generated: %s\n", output)
+
+	// Open in browser if requested
 	if *openBrowser {
 		if *verbose {
-			log.Printf("Would open browser for: %s\n", output)
+			log.Printf("Opening in browser...\n")
+		}
+		if err := openBrowserFunc(output); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not open browser: %v\n", err)
 		}
 	}
 
-	fmt.Printf("Timeline visualization would be written to: %s\n", output)
 	return nil
+}
+
+func openBrowserFunc(path string) error {
+	var cmd string
+	var args []string
+
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = "open"
+		args = []string{path}
+	case "linux":
+		cmd = "xdg-open"
+		args = []string{path}
+	case "windows":
+		cmd = "cmd"
+		args = []string{"/c", "start", path}
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+
+	return exec.Command(cmd, args...).Start()
 }
