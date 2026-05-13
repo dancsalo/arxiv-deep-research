@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Agent Trace Visualizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0f0f23;
+            color: #e0e0e0;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .metadata {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .metadata-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+
+        .metadata-label {
+            font-size: 0.85em;
+            opacity: 0.8;
+            margin-bottom: 4px;
+        }
+
+        .metadata-value {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #fbbf24;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: #1a1a2e;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #2d2d44;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-card h3 {
+            color: #60a5fa;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #fbbf24;
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+
+        .timeline {
+            background: #1a1a2e;
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid #2d2d44;
+            margin-bottom: 30px;
+        }
+
+        .timeline h2 {
+            color: #60a5fa;
+            margin-bottom: 25px;
+            font-size: 1.5em;
+        }
+
+        .turn {
+            position: relative;
+            padding-left: 40px;
+            margin-bottom: 30px;
+        }
+
+        .turn::before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 0;
+            bottom: -30px;
+            width: 2px;
+            background: linear-gradient(to bottom, #3b82f6, #1e3a8a);
+        }
+
+        .turn:last-child::before {
+            bottom: 0;
+        }
+
+        .turn-marker {
+            position: absolute;
+            left: 0;
+            top: 8px;
+            width: 22px;
+            height: 22px;
+            background: #3b82f6;
+            border: 3px solid #1a1a2e;
+            border-radius: 50%;
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.3);
+        }
+
+        .turn-header {
+            background: #252541;
+            padding: 15px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid #3d3d5c;
+        }
+
+        .turn-header:hover {
+            background: #2d2d4a;
+            border-color: #4a4a6a;
+        }
+
+        .turn-header.expanded {
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            border-bottom: none;
+        }
+
+        .turn-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .turn-index {
+            color: #60a5fa;
+            font-weight: bold;
+            font-size: 1.2em;
+        }
+
+        .turn-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 0.9em;
+        }
+
+        .turn-stat {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .turn-stat-label {
+            opacity: 0.7;
+        }
+
+        .turn-stat-value {
+            color: #fbbf24;
+            font-weight: 600;
+        }
+
+        .turn-details {
+            background: #1f1f35;
+            padding: 20px;
+            border: 1px solid #3d3d5c;
+            border-top: none;
+            border-bottom-left-radius: 8px;
+            border-bottom-right-radius: 8px;
+            display: none;
+        }
+
+        .turn-details.expanded {
+            display: block;
+        }
+
+        .tool-calls {
+            margin-top: 15px;
+        }
+
+        .tool-call {
+            background: #252541;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            border-left: 4px solid #10b981;
+        }
+
+        .tool-call-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .tool-name {
+            color: #10b981;
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .tool-duration {
+            color: #fbbf24;
+            font-size: 0.9em;
+        }
+
+        .tool-input, .tool-output {
+            background: #1a1a2e;
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85em;
+            overflow-x: auto;
+        }
+
+        .tool-input h4, .tool-output h4 {
+            color: #60a5fa;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+
+        .tool-output {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .llm-call {
+            background: #2d1b4e;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            border-left: 4px solid #8b5cf6;
+        }
+
+        .llm-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .llm-model {
+            color: #a78bfa;
+            font-weight: bold;
+        }
+
+        .llm-stats {
+            display: flex;
+            gap: 15px;
+            font-size: 0.85em;
+        }
+
+        .llm-stat {
+            color: #c4b5fd;
+        }
+
+        .llm-content {
+            background: #1a1a2e;
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .llm-text {
+            color: #e0e0e0;
+            white-space: pre-wrap;
+            line-height: 1.5;
+        }
+
+        .section-title {
+            color: #60a5fa;
+            font-size: 1em;
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-ok {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        .status-error {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .expand-icon {
+            transition: transform 0.2s ease;
+        }
+
+        .expanded .expand-icon {
+            transform: rotate(180deg);
+        }
+
+        .cost-breakdown {
+            background: #1a1a2e;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+
+        .cost-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #2d2d44;
+        }
+
+        .cost-item:last-child {
+            border-bottom: none;
+        }
+
+        .guardrail {
+            background: #1e293b;
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            border-left: 3px solid #0ea5e9;
+        }
+
+        .guardrail-label {
+            color: #0ea5e9;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .guardrail-details {
+            font-size: 0.85em;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .scrollbar::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .scrollbar::-webkit-scrollbar-track {
+            background: #1a1a2e;
+        }
+
+        .scrollbar::-webkit-scrollbar-thumb {
+            background: #3b82f6;
+            border-radius: 4px;
+        }
+
+        .scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #60a5fa;
+        }
+
+        pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .chart-container {
+            background: #1a1a2e;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #2d2d44;
+            margin-bottom: 30px;
+        }
+
+        .chart-title {
+            color: #60a5fa;
+            font-size: 1.2em;
+            margin-bottom: 20px;
+        }
+
+        .bar-chart {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .bar-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .bar-label {
+            min-width: 80px;
+            font-size: 0.9em;
+        }
+
+        .bar-container {
+            flex: 1;
+            background: #252541;
+            border-radius: 4px;
+            height: 24px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            background: linear-gradient(to right, #3b82f6, #60a5fa);
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            font-size: 0.75em;
+            font-weight: 600;
+            color: white;
+            transition: width 0.3s ease;
+        }
+
+        .file-input-container {
+            background: #1a1a2e;
+            padding: 30px;
+            border-radius: 12px;
+            border: 2px dashed #3b82f6;
+            text-align: center;
+            margin-bottom: 30px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .file-input-container:hover {
+            border-color: #60a5fa;
+            background: #1f1f35;
+        }
+
+        .file-input-container.dragover {
+            border-color: #10b981;
+            background: #1f2f28;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .file-input-label {
+            color: #60a5fa;
+            font-size: 1.2em;
+            cursor: pointer;
+        }
+
+        .file-input-hint {
+            margin-top: 10px;
+            opacity: 0.7;
+            font-size: 0.9em;
+        }
+
+        .loaded-file {
+            color: #10b981;
+            margin-top: 10px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="file-input-container" id="fileInputContainer">
+            <label for="fileInput" class="file-input-label">
+                📁 Load Trace JSON File
+            </label>
+            <input type="file" id="fileInput" class="file-input" accept=".json">
+            <div class="file-input-hint">Click to browse or drag and drop a trace JSON file</div>
+            <div class="loaded-file" id="loadedFileName"></div>
+        </div>
+
+        <div id="content" style="display: none;">
+            <div class="header">
+                <h1>🔬 Research Agent Trace Visualizer</h1>
+                <div class="metadata" id="metadata"></div>
+            </div>
+
+            <div class="stats-grid" id="statsGrid"></div>
+
+            <div class="chart-container" id="chartContainer"></div>
+
+            <div class="timeline">
+                <h2>Timeline</h2>
+                <div id="timeline"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let traceData = null;
+
+        const fileInput = document.getElementById('fileInput');
+        const fileInputContainer = document.getElementById('fileInputContainer');
+        const loadedFileName = document.getElementById('loadedFileName');
+        const content = document.getElementById('content');
+
+        // File input handling
+        fileInput.addEventListener('change', handleFileSelect);
+
+        fileInputContainer.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInputContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileInputContainer.classList.add('dragover');
+        });
+
+        fileInputContainer.addEventListener('dragleave', () => {
+            fileInputContainer.classList.remove('dragover');
+        });
+
+        fileInputContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileInputContainer.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.json')) {
+                handleFile(file);
+            }
+        });
+
+        function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (file) {
+                handleFile(file);
+            }
+        }
+
+        function handleFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    traceData = JSON.parse(e.target.result);
+                    loadedFileName.textContent = `✓ Loaded: ${file.name}`;
+                    renderTrace();
+                } catch (error) {
+                    alert('Error parsing JSON: ' + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function renderTrace() {
+            if (!traceData) return;
+
+            content.style.display = 'block';
+            renderMetadata();
+            renderStats();
+            renderCharts();
+            renderTimeline();
+        }
+
+        function renderMetadata() {
+            const metadata = document.getElementById('metadata');
+            const items = [
+                { label: 'Session ID', value: traceData.session_id },
+                { label: 'Query', value: traceData.query },
+                { label: 'Model', value: traceData.model.split('.').pop() },
+                { label: 'Status', value: traceData.status },
+                { label: 'Duration', value: formatDuration(traceData.duration_ms) },
+                { label: 'Total Cost', value: `$${traceData.total_cost_usd.toFixed(4)}` },
+                { label: 'Input Tokens', value: formatNumber(traceData.total_input_tokens) },
+                { label: 'Output Tokens', value: formatNumber(traceData.total_output_tokens) },
+            ];
+
+            metadata.innerHTML = items.map(item => `
+                <div class="metadata-item">
+                    <div class="metadata-label">${item.label}</div>
+                    <div class="metadata-value">${item.value}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderStats() {
+            const statsGrid = document.getElementById('statsGrid');
+            const turns = traceData.turns.length;
+            const totalToolCalls = traceData.turns.reduce((sum, turn) => sum + (turn.tool_calls?.length || 0), 0);
+            const avgTokensPerTurn = Math.round(traceData.total_input_tokens / turns);
+            const avgCostPerTurn = (traceData.total_cost_usd / turns).toFixed(4);
+
+            const stats = [
+                { title: 'Total Turns', value: turns, label: 'conversation turns' },
+                { title: 'Tool Calls', value: totalToolCalls, label: 'total tool invocations' },
+                { title: 'Avg Tokens/Turn', value: formatNumber(avgTokensPerTurn), label: 'input tokens' },
+                { title: 'Avg Cost/Turn', value: `$${avgCostPerTurn}`, label: 'USD' },
+            ];
+
+            statsGrid.innerHTML = stats.map(stat => `
+                <div class="stat-card">
+                    <h3>${stat.title}</h3>
+                    <div class="stat-value">${stat.value}</div>
+                    <div class="stat-label">${stat.label}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderCharts() {
+            const chartContainer = document.getElementById('chartContainer');
+
+            // Calculate tokens per turn
+            const tokensByTurn = traceData.turns.map((turn, idx) => ({
+                turn: idx,
+                tokens: turn.tokens_used
+            }));
+
+            const maxTokens = Math.max(...tokensByTurn.map(t => t.tokens));
+
+            chartContainer.innerHTML = `
+                <div class="chart-title">Token Usage by Turn</div>
+                <div class="bar-chart">
+                    ${tokensByTurn.map(item => {
+                        const percentage = (item.tokens / maxTokens * 100).toFixed(1);
+                        return `
+                            <div class="bar-item">
+                                <div class="bar-label">Turn ${item.turn}</div>
+                                <div class="bar-container">
+                                    <div class="bar-fill" style="width: ${percentage}%">
+                                        ${formatNumber(item.tokens)}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function renderTimeline() {
+            const timeline = document.getElementById('timeline');
+            timeline.innerHTML = traceData.turns.map((turn, idx) => {
+                const toolCalls = turn.tool_calls || [];
+                const llmCall = turn.llm_call;
+
+                return `
+                    <div class="turn">
+                        <div class="turn-marker"></div>
+                        <div class="turn-header" onclick="toggleTurn(${idx})">
+                            <div class="turn-title">
+                                <span class="turn-index">Turn ${idx}</span>
+                                <div class="turn-stats">
+                                    <div class="turn-stat">
+                                        <span class="turn-stat-label">Duration:</span>
+                                        <span class="turn-stat-value">${formatDuration(turn.duration_ms)}</span>
+                                    </div>
+                                    <div class="turn-stat">
+                                        <span class="turn-stat-label">Tokens:</span>
+                                        <span class="turn-stat-value">${formatNumber(turn.tokens_used)}</span>
+                                    </div>
+                                    <div class="turn-stat">
+                                        <span class="turn-stat-label">Cost:</span>
+                                        <span class="turn-stat-value">$${turn.cost_usd.toFixed(4)}</span>
+                                    </div>
+                                    <div class="turn-stat">
+                                        <span class="turn-stat-label">Tools:</span>
+                                        <span class="turn-stat-value">${toolCalls.length}</span>
+                                    </div>
+                                </div>
+                                <span class="expand-icon">▼</span>
+                            </div>
+                        </div>
+                        <div class="turn-details" id="turn-${idx}">
+                            ${renderLLMCall(llmCall)}
+                            ${renderToolCalls(toolCalls)}
+                            ${renderGuardrails(turn.guardrail_decisions)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderLLMCall(llmCall) {
+            if (!llmCall) return '';
+
+            const content = llmCall.output?.content || [];
+            const textContent = content
+                .filter(c => c.type === 'text')
+                .map(c => c.text)
+                .join('\n\n');
+
+            return `
+                <div class="llm-call">
+                    <div class="llm-header">
+                        <span class="llm-model">🤖 ${llmCall.model}</span>
+                        <div class="llm-stats">
+                            <span class="llm-stat">In: ${formatNumber(llmCall.input_tokens)}</span>
+                            <span class="llm-stat">Out: ${formatNumber(llmCall.output_tokens)}</span>
+                            <span class="llm-stat">${formatDuration(llmCall.duration_ms)}</span>
+                        </div>
+                    </div>
+                    ${textContent ? `
+                        <div class="llm-content">
+                            <div class="llm-text">${escapeHtml(textContent)}</div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function renderToolCalls(toolCalls) {
+            if (!toolCalls || toolCalls.length === 0) return '';
+
+            return `
+                <div class="section-title">Tool Calls</div>
+                <div class="tool-calls">
+                    ${toolCalls.map(call => `
+                        <div class="tool-call">
+                            <div class="tool-call-header">
+                                <span class="tool-name">🔧 ${call.name}</span>
+                                <span class="tool-duration">${formatDuration(call.duration_ms)}</span>
+                            </div>
+                            <div class="tool-input scrollbar">
+                                <h4>Input</h4>
+                                <pre>${escapeHtml(JSON.stringify(call.input, null, 2))}</pre>
+                            </div>
+                            ${call.output ? `
+                                <div class="tool-output scrollbar">
+                                    <h4>Output (${formatNumber(call.result_length)} chars)</h4>
+                                    <pre>${escapeHtml(typeof call.output === 'string' ? call.output : JSON.stringify(call.output, null, 2)).slice(0, 1000)}${call.result_length > 1000 ? '\n... (truncated)' : ''}</pre>
+                                </div>
+                            ` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderGuardrails(guardrails) {
+            if (!guardrails || guardrails.length === 0) return '';
+
+            return `
+                <div class="section-title">Guardrail Decisions</div>
+                ${guardrails.map(g => `
+                    <div class="guardrail">
+                        <div class="guardrail-label">${g.tool_name}</div>
+                        <div class="guardrail-details">
+                            <span>Proceed: ${g.proceed ? '✓' : '✗'}</span>
+                            <span>Est. Tokens: ${formatNumber(g.estimated_tokens)}</span>
+                            <span>Remaining: ${formatNumber(g.tokens_remaining)}</span>
+                            <span>Safety Margin: ${formatNumber(g.safety_margin)}</span>
+                        </div>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        function toggleTurn(idx) {
+            const details = document.getElementById(`turn-${idx}`);
+            const header = details.previousElementSibling;
+
+            details.classList.toggle('expanded');
+            header.classList.toggle('expanded');
+        }
+
+        function formatDuration(ms) {
+            if (ms < 1000) return `${ms}ms`;
+            if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+            return `${(ms / 60000).toFixed(1)}m`;
+        }
+
+        function formatNumber(num) {
+            return num.toLocaleString();
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
