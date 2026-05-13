@@ -63,13 +63,13 @@ Usage:
   tools-cli [flags] <command> [args]
 
 Commands:
-  search-arxiv <query> [--max-results=N] [--search-field=FIELD]
-  search-openalex <query> [--max-results=N] [--filter=EXPR]
-  fetch-pdf <arxiv-id> [--max-length=N]
-  search-github <query> [--max-results=N]
-  search-web <query> [--max-results=N]
-  get-citations <work-id> --direction=<references|cited_by> [--max-results=N]
+  fetch-arxiv-text <arxiv-id> [--max-length=N]
   fetch-webpage <url> [--max-length=N]
+  get-citations <work-id> --direction=<references|cited_by> [--max-results=N]
+  search-arxiv <query> [--max-results=N] [--search-field=FIELD]
+  search-github <query> [--max-results=N]
+  search-openalex <query> [--max-results=N] [--filter=EXPR]
+  search-web <query> [--max-results=N]
 
 Flags:
   --interactive, -i    Launch interactive mode
@@ -77,15 +77,15 @@ Flags:
   --help, -h          Show this help
 
 Examples:
+  tools-cli fetch-arxiv-text "1706.03762"
+  tools-cli fetch-arxiv-text "2301.00001" --max-length=25000
+  tools-cli fetch-webpage "https://jalammar.github.io/illustrated-transformer/"
+  tools-cli get-citations W2741809807 --direction references --max-results 10
   tools-cli search-arxiv "attention mechanism"
   tools-cli search-arxiv "neural networks" --search-field=abstract
-  tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
-  tools-cli fetch-pdf "1706.03762"
-  tools-cli fetch-pdf "2301.00001" --max-length=15000
   tools-cli search-github "diffusion models pytorch"
+  tools-cli search-openalex "neural networks" --filter "publication_year:>2023"
   tools-cli search-web "quantum computing tutorials"
-  tools-cli get-citations W2741809807 --direction references --max-results 10
-  tools-cli fetch-webpage "https://jalammar.github.io/illustrated-transformer/"
   tools-cli --interactive
 `)
 }

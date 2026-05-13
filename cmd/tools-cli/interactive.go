@@ -20,13 +20,13 @@ func runInteractive(ctx context.Context, toolset *research.ResearchToolSet) erro
 
 	for {
 		fmt.Println("Select a tool:")
-		fmt.Println("  [1] search-arxiv        - Search arXiv for preprints")
-		fmt.Println("  [2] search-openalex     - Search academic literature")
-		fmt.Println("  [3] fetch-pdf           - Extract text from arXiv PDF")
-		fmt.Println("  [4] search-github       - Find GitHub repositories")
-		fmt.Println("  [5] search-web          - Search the general web")
-		fmt.Println("  [6] get-citations       - Get citations and references")
-		fmt.Println("  [7] fetch-webpage       - Fetch webpage content")
+		fmt.Println("  [1] fetch-arxiv-text    - Extract text from arXiv HTML")
+		fmt.Println("  [2] fetch-webpage       - Fetch webpage content")
+		fmt.Println("  [3] get-citations       - Get citations and references")
+		fmt.Println("  [4] search-arxiv        - Search arXiv for preprints")
+		fmt.Println("  [5] search-github       - Find GitHub repositories")
+		fmt.Println("  [6] search-openalex     - Search academic literature")
+		fmt.Println("  [7] search-web          - Search the general web")
 		fmt.Println("  [0] Exit")
 		fmt.Println()
 
@@ -42,31 +42,31 @@ func runInteractive(ctx context.Context, toolset *research.ResearchToolSet) erro
 			fmt.Println("Goodbye!")
 			return nil
 		case "1":
-			if err := interactiveSearchArxiv(ctx, toolset, reader); err != nil {
+			if err := interactiveFetchArxivText(ctx, toolset, reader); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 			}
 		case "2":
-			if err := interactiveSearchOpenAlex(ctx, toolset, reader); err != nil {
+			if err := interactiveFetchWebpage(ctx, toolset, reader); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 			}
 		case "3":
-			if err := interactiveFetchPdf(ctx, toolset, reader); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
-			}
-		case "4":
-			if err := interactiveSearchGithub(ctx, toolset, reader); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
-			}
-		case "5":
-			if err := interactiveSearchWeb(ctx, toolset, reader); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
-			}
-		case "6":
 			if err := interactiveGetCitations(ctx, toolset, reader); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 			}
+		case "4":
+			if err := interactiveSearchArxiv(ctx, toolset, reader); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+			}
+		case "5":
+			if err := interactiveSearchGithub(ctx, toolset, reader); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+			}
+		case "6":
+			if err := interactiveSearchOpenAlex(ctx, toolset, reader); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
+			}
 		case "7":
-			if err := interactiveFetchWebpage(ctx, toolset, reader); err != nil {
+			if err := interactiveSearchWeb(ctx, toolset, reader); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n\n", err)
 			}
 		default:
@@ -196,8 +196,8 @@ func interactiveSearchOpenAlex(ctx context.Context, toolset *research.ResearchTo
 	return formatOutput(os.Stdout, "search-openalex", result, false)
 }
 
-func interactiveFetchPdf(ctx context.Context, toolset *research.ResearchToolSet, reader *bufio.Reader) error {
-	fmt.Println("\n--- fetch-pdf ---")
+func interactiveFetchArxivText(ctx context.Context, toolset *research.ResearchToolSet, reader *bufio.Reader) error {
+	fmt.Println("\n--- fetch-arxiv-text ---")
 
 	fmt.Print("arXiv ID (e.g., 1706.03762): ")
 	arxivID, err := reader.ReadString('\n')
@@ -209,14 +209,14 @@ func interactiveFetchPdf(ctx context.Context, toolset *research.ResearchToolSet,
 		return fmt.Errorf("arXiv ID cannot be empty")
 	}
 
-	fmt.Print("Max length [8000]: ")
+	fmt.Print("Max length [25000]: ")
 	maxLengthStr, err := reader.ReadString('\n')
 	if err != nil {
 		return err
 	}
 	maxLengthStr = strings.TrimSpace(maxLengthStr)
 
-	maxLength := 8000
+	maxLength := 25000
 	if maxLengthStr != "" {
 		maxLength, err = strconv.Atoi(maxLengthStr)
 		if err != nil {
@@ -224,7 +224,7 @@ func interactiveFetchPdf(ctx context.Context, toolset *research.ResearchToolSet,
 		}
 	}
 
-	fmt.Println("\nFetching PDF content...")
+	fmt.Println("\nFetching arXiv HTML text content...")
 
 	input := map[string]interface{}{
 		"arxiv_id":   arxivID,
@@ -235,13 +235,13 @@ func interactiveFetchPdf(ctx context.Context, toolset *research.ResearchToolSet,
 		return err
 	}
 
-	result, err := callToolHandler(ctx, toolset, "fetch_arxiv_pdf", inputJSON)
+	result, err := callToolHandler(ctx, toolset, "fetch_arxiv_text", inputJSON)
 	if err != nil {
 		return err
 	}
 
 	fmt.Println("\n=== Result ===")
-	return formatOutput(os.Stdout, "fetch-pdf", result, false)
+	return formatOutput(os.Stdout, "fetch-arxiv-text", result, false)
 }
 
 func interactiveSearchGithub(ctx context.Context, toolset *research.ResearchToolSet, reader *bufio.Reader) error {

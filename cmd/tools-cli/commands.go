@@ -13,20 +13,20 @@ import (
 
 func executeCommand(ctx context.Context, toolset *research.ResearchToolSet, command string, args []string) error {
 	switch command {
-	case "search-arxiv":
-		return executeSearchArxiv(ctx, toolset, args)
-	case "search-openalex":
-		return executeSearchOpenAlex(ctx, toolset, args)
-	case "fetch-pdf":
-		return executeFetchPdf(ctx, toolset, args)
-	case "search-github":
-		return executeSearchGithub(ctx, toolset, args)
-	case "search-web":
-		return executeSearchWeb(ctx, toolset, args)
-	case "get-citations":
-		return executeGetCitations(ctx, toolset, args)
+	case "fetch-arxiv-text":
+		return executeFetchArxivText(ctx, toolset, args)
 	case "fetch-webpage":
 		return executeFetchWebpage(ctx, toolset, args)
+	case "get-citations":
+		return executeGetCitations(ctx, toolset, args)
+	case "search-arxiv":
+		return executeSearchArxiv(ctx, toolset, args)
+	case "search-github":
+		return executeSearchGithub(ctx, toolset, args)
+	case "search-openalex":
+		return executeSearchOpenAlex(ctx, toolset, args)
+	case "search-web":
+		return executeSearchWeb(ctx, toolset, args)
 	default:
 		return fmt.Errorf("unknown command: %s", command)
 	}
@@ -102,16 +102,16 @@ func executeSearchOpenAlex(ctx context.Context, toolset *research.ResearchToolSe
 	return formatOutput(os.Stdout, "search-openalex", result, *jsonOutput)
 }
 
-func executeFetchPdf(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
-	fs := flag.NewFlagSet("fetch-pdf", flag.ExitOnError)
-	maxLength := fs.Int("max-length", 8000, "maximum text content length in characters")
+func executeFetchArxivText(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
+	fs := flag.NewFlagSet("fetch-arxiv-text", flag.ExitOnError)
+	maxLength := fs.Int("max-length", 25000, "maximum text content length in characters")
 
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	if fs.NArg() == 0 {
-		return fmt.Errorf("arxiv-id argument required\n\nUsage: tools-cli fetch-pdf <arxiv-id> [--max-length=N]\n\nExpected formats:\n  - 2301.00001 (new format)\n  - arXiv:2301.00001\n  - astro-ph/9901234 (old format)\n\nExamples:\n  tools-cli fetch-pdf \"1706.03762\"\n  tools-cli fetch-pdf \"2301.00001\" --max-length 15000")
+		return fmt.Errorf("arxiv-id argument required\n\nUsage: tools-cli fetch-arxiv-text <arxiv-id> [--max-length=N]\n\nExpected formats:\n  - 2301.00001 (new format)\n  - arXiv:2301.00001\n  - astro-ph/9901234 (old format)\n\nExamples:\n  tools-cli fetch-arxiv-text \"1706.03762\"\n  tools-cli fetch-arxiv-text \"2301.00001\" --max-length 25000")
 	}
 
 	arxivID := fs.Arg(0)
@@ -131,7 +131,7 @@ func executeFetchPdf(ctx context.Context, toolset *research.ResearchToolSet, arg
 		return err
 	}
 
-	return formatOutput(os.Stdout, "fetch-pdf", result, *jsonOutput)
+	return formatOutput(os.Stdout, "fetch-arxiv-text", result, *jsonOutput)
 }
 
 func executeSearchGithub(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
