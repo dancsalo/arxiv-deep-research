@@ -59,3 +59,4 @@ examples/*/parallel-tool-use
 *.test
 *.out
 *.prof
+trace-viewer

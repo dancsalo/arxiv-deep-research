@@ -23,7 +23,7 @@ help: ## Show this help
 	@echo "  make trace-view       View most recent trace in browser"
 	@echo "  make trace-errors     Show failed traces"
 
-build: build-research build-tools ## Build all binaries
+build: build-research build-tools build-viewer ## Build all binaries
 
 build-research: ## Build research-demo binary
 	go build -o research-demo ./cmd/research-demo

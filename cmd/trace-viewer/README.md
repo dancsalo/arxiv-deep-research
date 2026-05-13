@@ -68,4 +68,4 @@ go build -o trace-viewer .
 
 - **Static HTML Generator**: Reads trace JSON, generates self-contained HTML
 - **No Dependencies**: Pure Go stdlib backend, vanilla JavaScript frontend
-- **Follows trace-analyzer Pattern**: Consistent with existing tooling
+- **Self-Contained Output**: Generated HTML works offline, no server needed

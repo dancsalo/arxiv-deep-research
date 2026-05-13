@@ -6,10 +6,13 @@ import (
 )
 
 type GuardrailDecision struct {
-	Proceed      bool
-	ModifiedArgs map[string]any
-	Reason       string
-	Compacted    []int
+	Proceed            bool
+	ModifiedArgs       map[string]any
+	Reason             string
+	Compacted          []int
+	ToolResultsRemoved int
+	MessagesRemoved    int
+	SummaryTokens      int
 }
 
 func (m *ContextManager) PreToolGuardrail(
@@ -40,6 +43,7 @@ func (m *ContextManager) PreToolGuardrail(
 	}
 
 	needed := m.SpaceNeeded(estimated)
+
 	compactedIdxs, err := m.autoCompact(ctx, needed)
 	if err != nil {
 		return GuardrailDecision{
@@ -48,13 +52,19 @@ func (m *ContextManager) PreToolGuardrail(
 		}, nil
 	}
 
+	// Compute stats about what was removed
+	toolResults, messages := m.countRemovableContent(compactedIdxs)
 	currentTokens, _ = m.GetTokenCount(ctx)
 	remaining = m.budget.Remaining(currentTokens)
+
 	if estimated < remaining {
 		return GuardrailDecision{
-			Proceed:   true,
-			Compacted: compactedIdxs,
-			Reason:    fmt.Sprintf("compacted %d turns to free space", len(compactedIdxs)),
+			Proceed:            true,
+			Compacted:          compactedIdxs,
+			Reason:             fmt.Sprintf("compacted %d turns to free space", len(compactedIdxs)),
+			ToolResultsRemoved: toolResults,
+			MessagesRemoved:    messages,
+			SummaryTokens:      m.estimateSummaryTokens(compactedIdxs),
 		}, nil
 	}
 
@@ -152,4 +162,36 @@ func copyArgs(args map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
+}
+
+func (m *ContextManager) countRemovableContent(turnIdxs []int) (toolResults int, messages int) {
+	for _, idx := range turnIdxs {
+		if idx >= len(m.log.turns) {
+			continue
+		}
+		turn := m.log.turns[idx]
+
+		// Count tool results
+		if turn.ToolResults != nil && turn.ToolResults.Content != nil {
+			toolResults++
+		}
+
+		// Count messages (assistant message per turn)
+		if turn.Assistant.Content != nil {
+			messages++
+		}
+	}
+	return
+}
+
+func (m *ContextManager) estimateSummaryTokens(turnIdxs []int) int {
+	// Estimate summary is typically 10-20% of original content
+	totalTokens := 0
+	for _, idx := range turnIdxs {
+		if idx >= len(m.log.turns) {
+			continue
+		}
+		totalTokens += m.log.turns[idx].EstimatedTokens
+	}
+	return totalTokens / 10 // rough estimate
 }
