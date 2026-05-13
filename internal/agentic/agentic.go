@@ -166,15 +166,18 @@ func (l *Loop) Run(ctx context.Context, query string) (string, error) {
 					estimated := l.manager.EstimateToolResult(toolName, args)
 
 					guardInfo := GuardrailInfo{
-						ToolName:       toolName,
-						Proceed:        guardErr == nil && decision.Proceed,
-						Reason:         decision.Reason,
-						Estimated:      estimated,
-						Remaining:      tokensRemaining,
-						SafetyMargin:   safetyMargin,
-						ArgsModified:   decision.ModifiedArgs != nil,
-						Compacted:      len(decision.Compacted) > 0,
-						CompactedTurns: decision.Compacted,
+						ToolName:           toolName,
+						Proceed:            guardErr == nil && decision.Proceed,
+						Reason:             decision.Reason,
+						Estimated:          estimated,
+						Remaining:          tokensRemaining,
+						SafetyMargin:       safetyMargin,
+						ArgsModified:       decision.ModifiedArgs != nil,
+						Compacted:          len(decision.Compacted) > 0,
+						CompactedTurns:     decision.Compacted,
+						ToolResultsRemoved: decision.ToolResultsRemoved,
+						MessagesRemoved:    decision.MessagesRemoved,
+						SummaryTokens:      decision.SummaryTokens,
 					}
 					if err := l.hooks.OnGuardrail(ctx, guardInfo, state); err != nil {
 						l.logger.Warn("hook.error", "hook", "OnGuardrail", "err", err)

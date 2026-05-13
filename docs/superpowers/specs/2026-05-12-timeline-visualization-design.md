@@ -17,7 +17,7 @@ A single-trace visualization tool that makes the timeline the central, interacti
 - Analyze context management effectiveness (compaction impact)
 
 **Non-goals:**
-- Multi-trace comparison or aggregation (handled by trace-analyzer dashboard)
+- Multi-trace comparison or aggregation
 - Real-time monitoring or live trace viewing
 - Collaborative features or annotations
 - Advanced comparison modes (out of scope for MVP)
@@ -26,7 +26,7 @@ A single-trace visualization tool that makes the timeline the central, interacti
 
 ### Implementation Approach
 
-**Static HTML Generator (Go)** — follows the trace-analyzer pattern.
+**Static HTML Generator (Go)** — self-contained HTML with embedded data.
 
 ```
 ┌──────────────┐
@@ -58,10 +58,9 @@ A single-trace visualization tool that makes the timeline the central, interacti
 - **Data format:** JSON embedded in `<script type="application/json">` tag
 
 **Why static generation:**
-- Consistent with existing trace-analyzer tool
 - No server required (simple deployment and usage)
 - Works offline
-- Fast to implement (reuse existing patterns)
+- Fast to implement with stdlib-only dependencies
 - Sufficient for current trace sizes (< 100 turns typical)
 
 ## User Experience

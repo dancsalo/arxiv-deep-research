@@ -52,6 +52,24 @@ func (r *Recorder) Flush() error {
 	defer r.mu.Unlock()
 	r.trace.EndedAt = time.Now()
 	r.trace.DurationMs = r.trace.EndedAt.Sub(r.trace.StartedAt).Milliseconds()
+	return r.writeTrace()
+}
+
+// flushIncremental writes the trace without updating end time (for in-progress traces)
+func (r *Recorder) flushIncremental() error {
+	if !r.cfg.Enabled() {
+		return nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Update end time and duration for in-progress traces
+	r.trace.EndedAt = time.Now()
+	r.trace.DurationMs = r.trace.EndedAt.Sub(r.trace.StartedAt).Milliseconds()
+	return r.writeTrace()
+}
+
+// writeTrace writes the trace to disk (must be called with r.mu held)
+func (r *Recorder) writeTrace() error {
 	if err := os.MkdirAll(r.cfg.Dir, 0o755); err != nil {
 		return err
 	}

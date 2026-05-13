@@ -44,15 +44,18 @@ type TurnState struct {
 }
 
 type GuardrailInfo struct {
-	ToolName        string
-	Proceed         bool
-	Reason          string
-	Estimated       int
-	Remaining       int
-	SafetyMargin    int
-	ArgsModified    bool
-	Compacted       bool
-	CompactedTurns  []int
+	ToolName           string
+	Proceed            bool
+	Reason             string
+	Estimated          int
+	Remaining          int
+	SafetyMargin       int
+	ArgsModified       bool
+	Compacted          bool
+	CompactedTurns     []int
+	ToolResultsRemoved int
+	MessagesRemoved    int
+	SummaryTokens      int
 }
 
 type LoopHooks struct {

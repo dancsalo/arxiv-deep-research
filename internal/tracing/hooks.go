@@ -3,6 +3,8 @@ package tracing
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dancsalo/arxiv-deep-research/internal/agentic"
@@ -37,8 +39,8 @@ func (r *Recorder) onTurnStart(_ context.Context, state agentic.TurnState) error
 
 func (r *Recorder) onTurnEnd(_ context.Context, state agentic.TurnState) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if r.currentTurn == nil {
+		r.mu.Unlock()
 		return nil
 	}
 	now := time.Now()
@@ -56,10 +58,70 @@ func (r *Recorder) onTurnEnd(_ context.Context, state agentic.TurnState) error {
 		r.pendingLLMCall = nil
 	}
 
+	// Generate display metadata
+	r.currentTurn.Display = generateTurnDisplay(r.currentTurn)
+
 	r.trace.TotalCostUSD = state.TotalCostUSD
 	r.trace.Turns = append(r.trace.Turns, *r.currentTurn)
 	r.currentTurn = nil
+	r.mu.Unlock()
+
+	// Flush trace after each turn to enable real-time viewing
+	if err := r.flushIncremental(); err != nil && r.cfg.Logger != nil {
+		r.cfg.Logger.Warn("failed to flush trace incrementally", "err", err)
+	}
 	return nil
+}
+
+func generateTurnDisplay(turn *Turn) *TurnDisplay {
+	display := &TurnDisplay{
+		Status: "success",
+	}
+
+	// Check for errors
+	hasError := false
+	if turn.LLMCall != nil && turn.LLMCall.Error != "" {
+		hasError = true
+	}
+	for _, tc := range turn.ToolCalls {
+		if tc.Error != nil {
+			hasError = true
+			break
+		}
+	}
+	if hasError {
+		display.Status = "error"
+	}
+
+	// Generate label based on tool calls
+	toolCount := len(turn.ToolCalls)
+	if toolCount == 0 {
+		display.Label = "Reasoning"
+		display.Summary = "LLM reasoning without tool calls"
+	} else if toolCount == 1 {
+		display.Label = turn.ToolCalls[0].Name
+		display.PrimaryTool = turn.ToolCalls[0].Name
+		display.Summary = "1 tool call"
+	} else {
+		// Find most common tool
+		toolCounts := make(map[string]int)
+		for _, tc := range turn.ToolCalls {
+			toolCounts[tc.Name]++
+		}
+		maxCount := 0
+		var primaryTool string
+		for name, count := range toolCounts {
+			if count > maxCount {
+				maxCount = count
+				primaryTool = name
+			}
+		}
+		display.PrimaryTool = primaryTool
+		display.Label = primaryTool
+		display.Summary = fmt.Sprintf("%d tool calls", toolCount)
+	}
+
+	return display
 }
 
 func (r *Recorder) onToolCall(_ context.Context, toolName string, input json.RawMessage, _ agentic.TurnState) error {
@@ -67,12 +129,26 @@ func (r *Recorder) onToolCall(_ context.Context, toolName string, input json.Raw
 	defer r.mu.Unlock()
 	if r.currentTurn != nil {
 		idx := len(r.currentTurn.ToolCalls)
-		r.currentTurn.ToolCalls = append(r.currentTurn.ToolCalls, ToolCall{
+		startTime := time.Now()
+
+		toolCall := ToolCall{
 			Name:        toolName,
 			Input:       input,
 			InputLength: len(input),
-		})
-		r.toolStartStack = append(r.toolStartStack, time.Now())
+			StartedAt:   &startTime,
+		}
+
+		// Set parent tool index for nested calls
+		if len(r.toolIndexStack) > 0 {
+			parentIdx := r.toolIndexStack[len(r.toolIndexStack)-1]
+			toolCall.ParentToolIndex = &parentIdx
+			toolCall.ExecutionMode = "sequential"
+		} else {
+			toolCall.ExecutionMode = "parallel"
+		}
+
+		r.currentTurn.ToolCalls = append(r.currentTurn.ToolCalls, toolCall)
+		r.toolStartStack = append(r.toolStartStack, startTime)
 		r.toolIndexStack = append(r.toolIndexStack, idx)
 	}
 	return nil
@@ -91,8 +167,21 @@ func (r *Recorder) onToolResult(_ context.Context, _ string, result string, _ ag
 	r.toolIndexStack = r.toolIndexStack[:n]
 
 	if idx < len(r.currentTurn.ToolCalls) {
-		r.currentTurn.ToolCalls[idx].DurationMs = time.Since(startTime).Milliseconds()
+		endTime := time.Now()
+		r.currentTurn.ToolCalls[idx].EndedAt = &endTime
+		r.currentTurn.ToolCalls[idx].DurationMs = endTime.Sub(startTime).Milliseconds()
 		r.currentTurn.ToolCalls[idx].ResultLength = len(result)
+
+		// Check if result is an error
+		if strings.HasPrefix(result, "Error:") || strings.HasPrefix(result, "error:") {
+			r.currentTurn.ToolCalls[idx].Error = &ToolError{
+				Type:            "ToolExecutionError",
+				Message:         result,
+				Retryable:       false,
+				AttemptedRetries: 0,
+				SuggestedAction: "",
+			}
+		}
 
 		// Try to parse result as JSON; if it fails, wrap it as a JSON string
 		var outputJSON json.RawMessage
@@ -120,7 +209,7 @@ func (r *Recorder) onGuardrail(_ context.Context, info agentic.GuardrailInfo, _ 
 		return nil
 	}
 
-	r.currentTurn.GuardrailDecisions = append(r.currentTurn.GuardrailDecisions, GuardrailDecision{
+	decision := GuardrailDecision{
 		ToolName:        info.ToolName,
 		Proceed:         info.Proceed,
 		Reason:          info.Reason,
@@ -130,7 +219,18 @@ func (r *Recorder) onGuardrail(_ context.Context, info agentic.GuardrailInfo, _ 
 		ArgsModified:    info.ArgsModified,
 		Compacted:       info.Compacted,
 		CompactedTurns:  info.CompactedTurns,
-	})
+	}
+
+	// Add removed content details if compaction occurred
+	if info.Compacted && (info.ToolResultsRemoved > 0 || info.MessagesRemoved > 0) {
+		decision.RemovedContent = &RemovedContent{
+			ToolResultsCount: info.ToolResultsRemoved,
+			MessageCount:     info.MessagesRemoved,
+			SummaryTokens:    info.SummaryTokens,
+		}
+	}
+
+	r.currentTurn.GuardrailDecisions = append(r.currentTurn.GuardrailDecisions, decision)
 	return nil
 }
 

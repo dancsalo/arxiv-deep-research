@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a static HTML generator tool (trace-viewer) that visualizes single research agent traces as interactive timelines, following the trace-analyzer pattern.
+**Goal:** Build a static HTML generator tool (trace-viewer) that visualizes single research agent traces as interactive timelines.
 
 **Architecture:** Go CLI tool reads trace JSON, enriches with schema feature detection, generates self-contained HTML with embedded data and vanilla JavaScript for UI.
 
@@ -1972,7 +1972,7 @@ go build -o trace-viewer .
 
 - **Static HTML Generator**: Reads trace JSON, generates self-contained HTML
 - **No Dependencies**: Pure Go stdlib backend, vanilla JavaScript frontend
-- **Follows trace-analyzer Pattern**: Consistent with existing tooling
+- **Self-Contained Output**: Generated HTML works offline, no server needed
 ```
 
 - [ ] **Step 2: Update root README**
