@@ -29,16 +29,16 @@ func formatOutput(w io.Writer, toolName string, result string, asJSON bool) erro
 
 	// Format based on tool type
 	switch toolName {
-	case "search-arxiv", "search-openalex", "search-web":
-		return formatSearchResults(w, result)
-	case "fetch-pdf":
-		return formatPdfResult(w, result)
-	case "search-github":
-		return formatGithubResults(w, result)
-	case "get-citations":
-		return formatCitationResults(w, result)
+	case "fetch-arxiv-text":
+		return formatArxivTextResult(w, result)
 	case "fetch-webpage":
 		return formatWebpageResult(w, result)
+	case "get-citations":
+		return formatCitationResults(w, result)
+	case "search-arxiv", "search-openalex", "search-web":
+		return formatSearchResults(w, result)
+	case "search-github":
+		return formatGithubResults(w, result)
 	default:
 		return fmt.Errorf("unknown tool: %s", toolName)
 	}
@@ -91,31 +91,23 @@ func formatSearchResults(w io.Writer, result string) error {
 	return nil
 }
 
-func formatPdfResult(w io.Writer, result string) error {
-	// Parse PDF result
+func formatArxivTextResult(w io.Writer, result string) error {
+	// Parse arXiv text result
 	var data map[string]interface{}
 	if err := json.Unmarshal([]byte(result), &data); err != nil {
-		return fmt.Errorf("invalid PDF result format: %w", err)
+		return fmt.Errorf("invalid arXiv text result format: %w", err)
 	}
 
 	arxivID, _ := data["arxiv_id"].(string)
 	textContent, _ := data["text_content"].(string)
-	pageCount, _ := data["page_count"].(float64)
 	charCount, _ := data["char_count"].(float64)
-	quality, _ := data["extraction_quality"].(string)
 	truncated, _ := data["truncated"].(bool)
-	errorMsg, _ := data["error"].(string)
 
-	fmt.Fprintf(w, "=== arXiv PDF Text Extraction ===\n\n")
+	fmt.Fprintf(w, "=== arXiv HTML Text Extraction ===\n\n")
 	fmt.Fprintf(w, "arXiv ID: %s\n", arxivID)
-	fmt.Fprintf(w, "Pages: %.0f\n", pageCount)
 	fmt.Fprintf(w, "Characters: %.0f\n", charCount)
-	fmt.Fprintf(w, "Quality: %s\n", quality)
 	if truncated {
-		fmt.Fprintf(w, "Truncated: yes\n")
-	}
-	if errorMsg != "" {
-		fmt.Fprintf(w, "Error: %s\n", errorMsg)
+		fmt.Fprintf(w, "Status: TRUNCATED (content exceeded max_length)\n")
 	}
 	fmt.Fprintf(w, "\n--- Text Content (first 500 chars) ---\n")
 	if len(textContent) > 500 {
