@@ -9,13 +9,16 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	readability "github.com/go-shiori/go-readability"
+	"github.com/ledongthuc/pdf"
 	"golang.org/x/net/html"
 )
 
@@ -50,11 +53,145 @@ type atomAuthor struct {
 	Name string `xml:"name"`
 }
 
+// detectRealAuthorNames detects capitalized words likely to be author names (not ML terms)
+func detectRealAuthorNames(query string) []string {
+	// Common ML terms that are NOT author names
+	commonMLTerms := map[string]bool{
+		"Neural": true, "Network": true, "Networks": true,
+		"Learning": true, "Deep": true, "Graph": true,
+		"Attention": true, "Model": true, "Models": true,
+		"Transformer": true, "Transformers": true,
+		"DARTS": true, "BERT": true, "GPT": true,
+		"Vision": true, "Language": true, "Image": true,
+		"Reinforcement": true, "Supervised": true,
+		"Diffusion": true, "Architecture": true,
+		"Search": true, "NAS": true, "GNN": true,
+	}
+
+	terms := strings.Fields(query)
+	var authors []string
+	for _, term := range terms {
+		// Must be capitalized and > 2 chars
+		if len(term) > 2 && unicode.IsUpper(rune(term[0])) {
+			// Skip if it's a common ML term
+			if !commonMLTerms[term] {
+				authors = append(authors, term)
+			}
+		}
+	}
+	return authors
+}
+
+// buildStructuredQuery builds arXiv query from explicit structured parameters
+func buildStructuredQuery(query string, authors []string, category string, exactPhrase bool) string {
+	var parts []string
+
+	// 1. Category filter (if provided)
+	if category != "" {
+		parts = append(parts, fmt.Sprintf("cat:%s", category))
+	}
+
+	// 2. Author filter (if provided)
+	if len(authors) > 0 {
+		authorParts := make([]string, len(authors))
+		for i, author := range authors {
+			authorParts[i] = fmt.Sprintf("au:%s", url.QueryEscape(author))
+		}
+		// AND all authors together
+		parts = append(parts, "("+strings.Join(authorParts, "+AND+")+")")
+	}
+
+	// 3. Query terms
+	if exactPhrase {
+		// Exact phrase in title
+		quotedQuery := "\"" + query + "\""
+		parts = append(parts, fmt.Sprintf("ti:%s", url.QueryEscape(quotedQuery)))
+	} else {
+		// All terms must appear (in title OR abstract)
+		queryTerms := strings.Fields(query)
+		if len(queryTerms) > 0 {
+			termParts := make([]string, len(queryTerms))
+			for i, term := range queryTerms {
+				termParts[i] = fmt.Sprintf("(ti:%s+OR+abs:%s)",
+					url.QueryEscape(term), url.QueryEscape(term))
+			}
+			parts = append(parts, "("+strings.Join(termParts, "+AND+")+")")
+		}
+	}
+
+	// Combine with AND
+	return strings.Join(parts, "+AND+")
+}
+
+// inferArxivCategory infers arXiv category from query keywords
+func inferArxivCategory(query string) string {
+	lowerQuery := strings.ToLower(query)
+
+	// Count keyword matches for each category
+	csLGKeywords := []string{"learning", "neural", "network", "training",
+		"model", "reinforcement", "supervised", "gradient",
+		"deep", "optimization", "classification"}
+	csCVKeywords := []string{"image", "vision", "visual", "detection",
+		"segmentation", "recognition", "object", "photo",
+		"pixel", "video", "scene"}
+	csCLKeywords := []string{"language", "text", "translation", "nlp",
+		"linguistic", "semantic", "syntax", "bert",
+		"transformer", "embedding"}
+
+	scoreLG := 0
+	scoreCV := 0
+	scoreCL := 0
+
+	for _, kw := range csLGKeywords {
+		if strings.Contains(lowerQuery, kw) {
+			scoreLG++
+		}
+	}
+	for _, kw := range csCVKeywords {
+		if strings.Contains(lowerQuery, kw) {
+			scoreCV++
+		}
+	}
+	for _, kw := range csCLKeywords {
+		if strings.Contains(lowerQuery, kw) {
+			scoreCL++
+		}
+	}
+
+	// Return category with highest score (min 2 keywords required)
+	maxScore := scoreLG
+	if scoreCV > maxScore {
+		maxScore = scoreCV
+	}
+	if scoreCL > maxScore {
+		maxScore = scoreCL
+	}
+
+	if maxScore < 2 {
+		return "" // Not confident
+	}
+
+	if scoreLG == maxScore {
+		return "cs.LG"
+	} else if scoreCV == maxScore {
+		return "cs.CV"
+	} else if scoreCL == maxScore {
+		return "cs.CL"
+	}
+
+	return ""
+}
+
 func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawMessage) (string, error) {
 	var params struct {
-		Query       string `json:"query"`
-		MaxResults  int    `json:"max_results"`
-		SearchField string `json:"search_field"`
+		Query       string   `json:"query"`
+		Authors     []string `json:"authors"`
+		Category    string   `json:"category"`
+		ExactPhrase bool     `json:"exact_phrase"`
+		MaxResults  int      `json:"max_results"`
+		SearchField string   `json:"search_field"`
+		SortBy      string   `json:"sort_by"`
+		SortOrder   string   `json:"sort_order"`
 	}
 	if err := json.Unmarshal(input, &params); err != nil {
 		return toolError("invalid input: "+err.Error(), false), nil
@@ -63,35 +200,115 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 		params.MaxResults = 10
 	}
 
-	// Map search_field to arXiv API prefix
-	searchPrefix := "ti" // Default to title
-	switch params.SearchField {
-	case "abstract":
-		searchPrefix = "abs"
-	case "title", "": // Empty string defaults to title
-		searchPrefix = "ti"
-	default:
-		return toolError(fmt.Sprintf("invalid search_field '%s': must be 'title' or 'abstract'", params.SearchField), false), nil
-	}
+	// Determine if using structured or inference mode
+	useStructured := params.Authors != nil || params.Category != "" || params.ExactPhrase
 
-	// Build search query with AND logic for multi-word queries
-	// This ensures all terms must match rather than any term (OR logic)
-	queryTerms := strings.Fields(params.Query)
-	var searchQuery string
-	if len(queryTerms) > 1 {
-		// Multi-word: join with AND
-		parts := make([]string, len(queryTerms))
-		for i, term := range queryTerms {
-			parts[i] = fmt.Sprintf("%s:%s", searchPrefix, url.QueryEscape(term))
+	// Set sort defaults based on mode
+	if params.SortBy == "" {
+		if useStructured && params.ExactPhrase {
+			params.SortBy = "relevance" // For exact phrase, use relevance
+		} else {
+			params.SortBy = "submittedDate"
 		}
-		searchQuery = strings.Join(parts, "+AND+")
-	} else {
-		// Single word: simple format
-		searchQuery = fmt.Sprintf("%s:%s", searchPrefix, url.QueryEscape(params.Query))
+	}
+	if params.SortOrder == "" {
+		params.SortOrder = "descending"
 	}
 
-	u := fmt.Sprintf("https://export.arxiv.org/api/query?search_query=%s&max_results=%d",
-		searchQuery, params.MaxResults)
+	var searchQuery string
+
+	// NEW: Check if using structured parameters
+	if useStructured {
+		// Structured mode: use explicit parameters
+		searchQuery = buildStructuredQuery(params.Query, params.Authors, params.Category, params.ExactPhrase)
+	} else {
+		// Legacy inference mode: parse natural language query
+		queryTerms := strings.Fields(params.Query)
+
+		// Check if query already has quotes (exact phrase)
+		hasQuotes := strings.Contains(params.Query, "\"")
+
+		if hasQuotes {
+			// Pattern 1a: Explicit exact phrase match
+			searchQuery = fmt.Sprintf("ti:%s", url.QueryEscape(params.Query))
+		} else {
+			// Detect if this looks like a paper title (3+ capitalized words)
+			capitalizedCount := 0
+			for _, term := range queryTerms {
+				if len(term) > 0 && unicode.IsUpper(rune(term[0])) {
+					capitalizedCount++
+				}
+			}
+
+			if capitalizedCount >= 3 {
+				// Pattern 1b: Likely paper title - use exact phrase
+				quotedQuery := "\"" + params.Query + "\""
+				searchQuery = fmt.Sprintf("ti:%s", url.QueryEscape(quotedQuery))
+			} else {
+				// Detect real author names
+				authors := detectRealAuthorNames(params.Query)
+
+				if len(authors) > 0 {
+					// Pattern 2/4: Has authors
+					authorParts := make([]string, len(authors))
+					for i, author := range authors {
+						authorParts[i] = fmt.Sprintf("au:%s", url.QueryEscape(author))
+					}
+					authorQuery := strings.Join(authorParts, "+AND+")
+
+					// Remove authors from query terms
+					var topicTerms []string
+					for _, term := range queryTerms {
+						isAuthor := false
+						for _, author := range authors {
+							if strings.EqualFold(term, author) {
+								isAuthor = true
+								break
+							}
+						}
+						if !isAuthor {
+							topicTerms = append(topicTerms, term)
+						}
+					}
+
+					if len(topicTerms) > 0 {
+						// Build keyword query (search in title AND abstract)
+						keywordParts := make([]string, len(topicTerms))
+						for i, term := range topicTerms {
+							keywordParts[i] = fmt.Sprintf("(ti:%s+OR+abs:%s)",
+								url.QueryEscape(term), url.QueryEscape(term))
+						}
+						keywordQuery := strings.Join(keywordParts, "+AND+")
+						searchQuery = authorQuery + "+AND+" + keywordQuery
+					} else {
+						searchQuery = authorQuery
+					}
+				} else {
+					// Pattern 3: General topic - use category + AND logic
+					category := inferArxivCategory(params.Query)
+
+					// Build keyword query with ALL terms required
+					var keywordParts []string
+					for _, term := range queryTerms {
+						// Search in both title and abstract for flexibility
+						keywordParts = append(keywordParts,
+							fmt.Sprintf("(ti:%s+OR+abs:%s)",
+								url.QueryEscape(term), url.QueryEscape(term)))
+					}
+					keywordQuery := strings.Join(keywordParts, "+AND+")
+
+					if category != "" {
+						searchQuery = fmt.Sprintf("cat:%s+AND+%s", category, keywordQuery)
+					} else {
+						searchQuery = keywordQuery
+					}
+				}
+			}
+		}
+	}
+
+	u := fmt.Sprintf("https://export.arxiv.org/api/query?search_query=%s&max_results=%d&sortBy=%s&sortOrder=%s",
+		searchQuery, params.MaxResults, params.SortBy, params.SortOrder)
 
 	// Rate limit: max 3 requests per second per arXiv TOS
 	r.arxivRateLimiter.Wait()
@@ -101,9 +318,34 @@ func (r *ResearchToolSet) handleSearchArxiv(ctx context.Context, input json.RawM
 		return toolError("request creation failed: "+err.Error(), false), nil
 	}
 
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return toolError("arXiv request failed: "+err.Error(), true), nil
+	// Retry logic with exponential backoff for 429 errors
+	var resp *http.Response
+	maxRetries := 2
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		resp, err = r.client.Do(req)
+		if err != nil {
+			if attempt < maxRetries {
+				time.Sleep(time.Duration(attempt+1) * time.Second)
+				continue
+			}
+			return toolError("arXiv request failed: "+err.Error(), true), nil
+		}
+
+		// Check for rate limit
+		if resp.StatusCode == 429 {
+			if attempt < maxRetries {
+				// Exponential backoff: 2s, 4s
+				waitTime := time.Duration(2<<attempt) * time.Second
+				resp.Body.Close()
+				time.Sleep(waitTime)
+				continue
+			}
+			resp.Body.Close()
+			return toolError(fmt.Sprintf("arXiv rate limit exceeded after %d retries", maxRetries), true), nil
+		}
+
+		// Success or non-retryable error
+		break
 	}
 	defer resp.Body.Close()
 
@@ -307,6 +549,60 @@ type ArxivPdfResult struct {
 
 
 
+// extractPDFText extracts text from PDF using ledongthuc/pdf library
+func extractPDFText(pdfReader io.Reader, maxLength int) (string, error) {
+	// Save to temp file (ledongthuc/pdf requires file path)
+	tmpFile, err := os.CreateTemp("", "arxiv-*.pdf")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	if _, err := io.Copy(tmpFile, pdfReader); err != nil {
+		return "", fmt.Errorf("failed to save PDF: %w", err)
+	}
+
+	// Open PDF
+	pdfFile, pdfReaderObj, err := pdf.Open(tmpFile.Name())
+	if err != nil {
+		return "", fmt.Errorf("failed to open PDF: %w", err)
+	}
+	defer pdfFile.Close()
+
+	// Extract text from all pages
+	var textContent strings.Builder
+	totalPages := pdfReaderObj.NumPage()
+
+	for pageNum := 1; pageNum <= totalPages; pageNum++ {
+		page := pdfReaderObj.Page(pageNum)
+		if page.V.IsNull() {
+			continue
+		}
+
+		text, err := page.GetPlainText(nil)
+		if err != nil {
+			// Skip pages with extraction errors
+			continue
+		}
+
+		textContent.WriteString(text)
+		textContent.WriteString("\n")
+
+		// Check length limit
+		if textContent.Len() >= maxLength {
+			break
+		}
+	}
+
+	result := textContent.String()
+	if len(result) > maxLength {
+		result = result[:maxLength]
+	}
+
+	return result, nil
+}
+
 func normalizeArxivID(id string) (normalized string, version string, err error) {
 	// Strip common prefixes and whitespace
 	id = strings.TrimSpace(id)
@@ -384,11 +680,47 @@ func (r *ResearchToolSet) handleFetchArxivText(ctx context.Context, input json.R
 
 	// Check HTML availability
 	if resp.StatusCode == http.StatusNotFound {
+		// Try PDF fallback
+		pdfURL := fmt.Sprintf("https://arxiv.org/pdf/%s.pdf", normalized)
+
+		r.arxivRateLimiter.Wait()
+
+		pdfReq, err := http.NewRequestWithContext(ctx, http.MethodGet, pdfURL, nil)
+		if err != nil {
+			return toolError("failed to create PDF request: "+err.Error(), false), nil
+		}
+
+		pdfResp, err := r.client.Do(pdfReq)
+		if err != nil {
+			return toolError("PDF request failed: "+err.Error(), true), nil
+		}
+		defer pdfResp.Body.Close()
+
+		if pdfResp.StatusCode != http.StatusOK {
+			// Both HTML and PDF unavailable
+			result := ArxivTextResult{
+				ArxivID:     normalized,
+				TextContent: "",
+				Truncated:   false,
+				Error:       "HTML and PDF versions not available for this paper",
+			}
+			b, err := json.Marshal(result)
+			if err != nil {
+				return toolError("failed to marshal result: "+err.Error(), false), nil
+			}
+			return string(b), nil
+		}
+
+		// Extract text from PDF
+		textContent, err := extractPDFText(pdfResp.Body, params.MaxLength)
+		if err != nil {
+			return toolError("PDF extraction failed: "+err.Error(), true), nil
+		}
+
 		result := ArxivTextResult{
 			ArxivID:     normalized,
-			TextContent: "",
-			Truncated:   false,
-			Error:       "HTML version not available for this paper",
+			TextContent: textContent,
+			Truncated:   len(textContent) >= params.MaxLength,
 		}
 		b, err := json.Marshal(result)
 		if err != nil {

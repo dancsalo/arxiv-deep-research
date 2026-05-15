@@ -33,24 +33,58 @@ func executeCommand(ctx context.Context, toolset *research.ResearchToolSet, comm
 }
 
 func executeSearchArxiv(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
+	// Extract query first (required positional argument before flags)
+	if len(args) == 0 {
+		return fmt.Errorf("query argument required\n\nUsage: tools-cli search-arxiv <query> [--max-results=N] [--search-field=FIELD] [--authors=NAMES] [--category=CAT] [--exact-phrase] [--sort-by=FIELD] [--sort-order=ORDER]\n\nExamples:\n  tools-cli search-arxiv \"attention mechanism\"\n  tools-cli search-arxiv \"Attention Is All You Need\" --exact-phrase --sort-by=relevance\n  tools-cli search-arxiv \"graph convolutional networks\" --authors=Kipf --category=cs.LG")
+	}
+
+	query := args[0]
+	flagArgs := args[1:]
+
 	fs := flag.NewFlagSet("search-arxiv", flag.ExitOnError)
 	maxResults := fs.Int("max-results", 10, "maximum number of results")
 	searchField := fs.String("search-field", "title", "field to search: title (default) or abstract")
+	authors := fs.String("authors", "", "comma-separated author last names (e.g., 'Vaswani,Shazeer')")
+	category := fs.String("category", "", "arXiv category (e.g., 'cs.LG', 'cs.CV', 'cs.CL')")
+	exactPhrase := fs.Bool("exact-phrase", false, "search for exact title match")
+	sortBy := fs.String("sort-by", "", "sort by: submittedDate, lastUpdatedDate, or relevance")
+	sortOrder := fs.String("sort-order", "", "sort order: ascending or descending")
 
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagArgs); err != nil {
 		return err
 	}
-
-	if fs.NArg() == 0 {
-		return fmt.Errorf("query argument required\n\nUsage: tools-cli search-arxiv <query> [--max-results=N] [--search-field=FIELD]\n\nExamples:\n  tools-cli search-arxiv \"attention mechanism\"\n  tools-cli search-arxiv \"transformers\" --search-field=abstract")
-	}
-
-	query := fs.Arg(0)
 
 	input := map[string]interface{}{
 		"query":        query,
 		"max_results":  *maxResults,
 		"search_field": *searchField,
+		"exact_phrase": *exactPhrase,
+	}
+
+	// Add optional structured parameters
+	if *authors != "" {
+		// Split comma-separated authors into array
+		authorList := []string{}
+		for _, author := range parseCSV(*authors) {
+			if author != "" {
+				authorList = append(authorList, author)
+			}
+		}
+		if len(authorList) > 0 {
+			input["authors"] = authorList
+		}
+	}
+
+	if *category != "" {
+		input["category"] = *category
+	}
+
+	if *sortBy != "" {
+		input["sort_by"] = *sortBy
+	}
+
+	if *sortOrder != "" {
+		input["sort_order"] = *sortOrder
 	}
 
 	inputJSON, err := json.Marshal(input)
@@ -64,6 +98,52 @@ func executeSearchArxiv(ctx context.Context, toolset *research.ResearchToolSet, 
 	}
 
 	return formatOutput(os.Stdout, "search-arxiv", result, *jsonOutput)
+}
+
+// parseCSV splits a comma-separated string into trimmed parts
+func parseCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var result []string
+	for _, part := range splitOn(s, ',') {
+		trimmed := trimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// splitOn splits a string on a delimiter (simple implementation)
+func splitOn(s string, delim rune) []string {
+	var result []string
+	var current []rune
+	for _, r := range s {
+		if r == delim {
+			result = append(result, string(current))
+			current = nil
+		} else {
+			current = append(current, r)
+		}
+	}
+	if len(current) > 0 || len(result) == 0 {
+		result = append(result, string(current))
+	}
+	return result
+}
+
+// trimSpace removes leading/trailing whitespace
+func trimSpace(s string) string {
+	start := 0
+	end := len(s)
+	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\n' || s[start] == '\r') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\n' || s[end-1] == '\r') {
+		end--
+	}
+	return s[start:end]
 }
 
 func executeSearchOpenAlex(ctx context.Context, toolset *research.ResearchToolSet, args []string) error {
