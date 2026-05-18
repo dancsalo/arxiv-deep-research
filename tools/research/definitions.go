@@ -9,7 +9,21 @@ func BuildSearchArxivTool() anthropic.ToolUnionParam {
 			Properties: map[string]any{
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Search query for arXiv papers",
+					"description": "Search terms or paper title",
+				},
+				"authors": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "string"},
+					"description": "Author last names (optional). Example: [\"Vaswani\", \"Shazeer\"] for multi-author search. Use this for author-specific searches rather than including names in query.",
+				},
+				"category": map[string]any{
+					"type":        "string",
+					"description": "arXiv category to filter results (optional). Common categories: 'cs.LG' (Machine Learning), 'cs.CV' (Computer Vision), 'cs.CL' (NLP), 'cs.AI' (Artificial Intelligence), 'cs.RO' (Robotics), 'stat.ML' (Statistics/ML). Use this to avoid wrong-domain contamination.",
+				},
+				"exact_phrase": map[string]any{
+					"type":        "boolean",
+					"description": "If true, searches for exact title match (optional, default: false). Use this when searching for a specific known paper by its full title. Automatically uses relevance sorting.",
+					"default":     false,
 				},
 				"max_results": map[string]any{
 					"type":        "integer",
@@ -18,8 +32,19 @@ func BuildSearchArxivTool() anthropic.ToolUnionParam {
 				},
 				"search_field": map[string]any{
 					"type":        "string",
-					"description": "Field to search: 'title' (default, most relevant) or 'abstract' (broader results)",
+					"description": "Field to search: 'title' (default) or 'abstract' (legacy parameter, usually not needed with structured params)",
 					"default":     "title",
+				},
+				"sort_by": map[string]any{
+					"type":        "string",
+					"description": "Sort by: 'relevance' (best for specific papers) or 'submittedDate' (best for recent papers). Default: 'relevance' for exact_phrase searches, 'submittedDate' otherwise.",
+					"enum":        []string{"submittedDate", "lastUpdatedDate", "relevance"},
+				},
+				"sort_order": map[string]any{
+					"type":        "string",
+					"description": "Sort order: 'descending' (default) or 'ascending'",
+					"enum":        []string{"descending", "ascending"},
+					"default":     "descending",
 				},
 			},
 			Required: []string{"query"},
@@ -27,7 +52,7 @@ func BuildSearchArxivTool() anthropic.ToolUnionParam {
 		"search_arxiv",
 	)
 	t.OfTool.Description = anthropic.String(
-		"Search arXiv for academic preprints. Returns titles, authors, abstracts, and links. Searches by title by default for most relevant results. Use search_field='abstract' for broader searches that include abstract text.",
+		"Search arXiv for academic preprints. STRUCTURED SEARCH: Provide explicit authors/category/exact_phrase parameters for best results. Examples: (1) Specific paper: query=\"Attention Is All You Need\", exact_phrase=true, sort_by=\"relevance\". (2) Author search: query=\"graph convolutional networks\", authors=[\"Kipf\"], category=\"cs.LG\". (3) Topic search: query=\"diffusion models\", category=\"cs.CV\". Available categories: cs.LG (ML), cs.CV (Vision), cs.CL (NLP), cs.AI (AI), cs.RO (Robotics).",
 	)
 	return t
 }
@@ -39,7 +64,7 @@ func BuildSearchOpenAlexTool() anthropic.ToolUnionParam {
 			Properties: map[string]any{
 				"query": map[string]any{
 					"type":        "string",
-					"description": "Search query for academic works",
+					"description": "Search query for academic works. Be SPECIFIC: use full paper titles, author names, and domain context. Generic queries (e.g., 'DARTS', 'transformers') often return wrong-domain papers. Good: 'DARTS Differentiable Architecture Search neural networks Liu'. Bad: 'DARTS' (returns biology papers).",
 				},
 				"max_results": map[string]any{
 					"type":        "integer",
