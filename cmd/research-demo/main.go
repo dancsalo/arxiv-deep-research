@@ -33,16 +33,10 @@ func (a *sdkAdapter) CreateMessage(ctx context.Context, params anthropic.Message
 }
 
 func loadPrompt(variant string) (string, string, error) {
-	variantMap := map[string]string{
-		"A": "variant-a-explicit.txt",
-		"B": "variant-b-metacognitive.txt",
-		"C": "variant-c-reward.txt",
-		"D": "variant-d-survey-driven.txt",
-	}
-
-	filename, ok := variantMap[variant]
-	if !ok {
-		return "", "", fmt.Errorf("unknown prompt variant: %s (must be A, B, C, or D)", variant)
+	// Only variant B is supported
+	filename := "variant-b-metacognitive.txt"
+	if variant != "B" {
+		return "", "", fmt.Errorf("only variant B is supported")
 	}
 
 	// Construct path relative to this source file
@@ -74,10 +68,10 @@ func loadPrompt(variant string) (string, string, error) {
 func main() {
 	query := flag.String("query", "retrieval augmented generation", "research query")
 	model := flag.String("model", "", "model ID override")
-	maxTurns := flag.Int("max-turns", 10, "maximum agentic loop turns")
+	maxTurns := flag.Int("max-turns", 3, "maximum agentic loop turns")
 	traceDir := flag.String("trace-dir", ".traces", "directory for trace files (empty to disable)")
 	useBedrock := flag.Bool("bedrock", true, "use AWS Bedrock")
-	promptVariant := flag.String("prompt-variant", "A", "prompt variant: A (explicit), B (metacognitive), C (reward), D (survey-driven)")
+	promptVariant := flag.String("prompt-variant", "B", "prompt variant (only B supported)")
 	flag.Parse()
 
 	ctx := context.Background()
